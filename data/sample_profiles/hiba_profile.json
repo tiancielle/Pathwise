@@ -1,0 +1,5 @@
+[
+  {
+    "profil_etudiant": "{\n  \"niveau\": \"debutant\",\n  \"style_apprentissage\": \"visuel\",\n  \"objectifs\": \"apprendre le machine learning\",\n  \"disponibilite_hebdo\": \"10 heures/semaine\",\n  \"points_forts\": [],\n  \"lacunes_probables\": [],\n  \"recommandation_depart\": \"Commencer par des cours introductifs sur le machine learning avec des supports visuels comme des vidéos et des infographies.\"\n}"
+  }
+]

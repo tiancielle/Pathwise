@@ -1,0 +1,107 @@
+{
+  "name": "onboarding_profile",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pathwise-profile",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -288,
+        -32
+      ],
+      "id": "de71b054-25d3-4e20-8ef8-50a6ad8fe2c0",
+      "name": "Webhook",
+      "webhookId": "c77814a8-15f7-406b-9f68-d430108c503f"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://models.inference.ai.azure.com/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Tu es un agent pédagogique expert. Analyse le profil de l'étudiant et génère un profil JSON structuré. Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"=Nom: {{ $json.body.nom }}\\nNiveau: {{ $json.body.niveau }}\\nObjectifs: {{ $json.body.objectifs }}\\nStyle: {{ $json.body.style }}\\nDisponibilité: {{ $json.body.disponibilite }} heures/semaine\\n\\nGénère le profil JSON avec les champs: niveau, style_apprentissage, objectifs, disponibilite_hebdo, points_forts, lacunes_probables, recommandation_depart\"\n    }\n  ],\n  \"temperature\": 0.3\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -80,
+        -32
+      ],
+      "id": "1159d1d0-06ca-42a7-a551-fb48ee834963",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zFCF9qIK3NpSA0qr",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7ab5f15d-eb7d-4e7f-9f54-6fe666ce02e4",
+              "name": "profil_etudiant",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        144,
+        -32
+      ],
+      "id": "a25d9f3b-071d-4f1b-876b-b9c5bb25b295",
+      "name": "Edit Fields"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "82165adf-3bbc-41b4-ba7f-798eea9ea303",
+  "meta": {
+    "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"
+  },
+  "id": "tZXJ4RB2aNEK3Seg",
+  "tags": []
+}
