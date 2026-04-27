@@ -1,0 +1,30 @@
+# pathwise-learning/docker-compose.yml
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: pathwise-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Africa/Casablanca
+      # Clés API (à remplir)
+      - GEMINI_API_KEY=<ta_clé_gemini>
+      - TAVILY_API_KEY=<ta_clé_tavily>
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - ./n8n_workflows:/home/node/workflows
+      - ./data:/home/node/data
+    networks:
+      - pathwise-net
+
+networks:
+  pathwise-net:
+    driver: bridge
