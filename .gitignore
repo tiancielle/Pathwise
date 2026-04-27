@@ -1,6 +1,8 @@
-.env
+echo "pathwise_env/
+.venv/
 __pycache__/
-node_modules/
-rag/chroma_db/
-backend/pathwise.db
 *.pyc
+n8n_data/
+backend/pathwise.db
+.env
+*.db" > .gitignore

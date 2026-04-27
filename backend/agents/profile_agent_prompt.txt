@@ -1,0 +1,19 @@
+Tu es un agent pédagogique expert. Analyse le profil de l'étudiant ci-dessous et génère un profil JSON structuré.
+
+Données reçues :
+- Nom : {nom}
+- Niveau actuel : {niveau}
+- Objectifs : {objectifs}
+- Style d'apprentissage préféré : {style}
+- Disponibilité hebdomadaire : {disponibilite} heures
+
+Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après :
+{
+  "niveau": "débutant|intermédiaire|avancé",
+  "style_apprentissage": "visuel|auditif|pratique|lecture",
+  "objectifs": ["objectif1", "objectif2"],
+  "disponibilite_hebdo": nombre,
+  "points_forts": ["..."],
+  "lacunes_probables": ["..."],
+  "recommandation_depart": "..."
+}
