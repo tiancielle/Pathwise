@@ -33,3 +33,14 @@ def get_profil(nom: str):
     if row:
         return {"id": row[0], "nom": row[1], "profil": json.loads(row[3])}
     return {"error": "Étudiant non trouvé"}
+
+from rag_pipeline import get_resources
+
+class ResourceRequest(BaseModel):
+    module: str
+    niveau: str
+
+@app.post("/api/ressources")
+def get_ressources(data: ResourceRequest):
+    results = get_resources(data.module, data.niveau)
+    return {"status": "ok", "source": results["source"], "ressources": results["results"]}

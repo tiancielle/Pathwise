@@ -1,0 +1,86 @@
+{
+  "domaine": "Machine Learning & Python",
+  "modules": [
+    {
+      "id": "python-bases",
+      "titre": "Python Bases",
+      "competences": ["variables", "boucles", "fonctions"],
+      "prerequis": [],
+      "duree_heures": 5,
+      "niveau": "débutant",
+      "priorite": 1
+    },
+    {
+      "id": "python-avance",
+      "titre": "Python Avancé",
+      "competences": ["POO", "exceptions", "fichiers"],
+      "prerequis": ["python-bases"],
+      "duree_heures": 6,
+      "niveau": "débutant",
+      "priorite": 2
+    },
+    {
+      "id": "numpy-pandas",
+      "titre": "NumPy & Pandas",
+      "competences": ["arrays", "dataframes", "manipulation données"],
+      "prerequis": ["python-bases"],
+      "duree_heures": 8,
+      "niveau": "intermédiaire",
+      "priorite": 3
+    },
+    {
+      "id": "visualisation",
+      "titre": "Visualisation de données",
+      "competences": ["matplotlib", "seaborn", "graphiques"],
+      "prerequis": ["numpy-pandas"],
+      "duree_heures": 5,
+      "niveau": "intermédiaire",
+      "priorite": 4
+    },
+    {
+      "id": "ml-intro",
+      "titre": "Introduction au ML",
+      "competences": ["supervised learning", "train/test split", "métriques"],
+      "prerequis": ["numpy-pandas"],
+      "duree_heures": 8,
+      "niveau": "intermédiaire",
+      "priorite": 5
+    },
+    {
+      "id": "ml-regression",
+      "titre": "Régression",
+      "competences": ["régression linéaire", "régression logistique"],
+      "prerequis": ["ml-intro"],
+      "duree_heures": 6,
+      "niveau": "intermédiaire",
+      "priorite": 6
+    },
+    {
+      "id": "ml-classification",
+      "titre": "Classification",
+      "competences": ["KNN", "SVM", "arbres de décision"],
+      "prerequis": ["ml-intro"],
+      "duree_heures": 7,
+      "niveau": "intermédiaire",
+      "priorite": 7
+    },
+    {
+      "id": "ml-evaluation",
+      "titre": "Évaluation de modèles",
+      "competences": ["cross-validation", "hyperparamètres", "overfitting"],
+      "prerequis": ["ml-regression", "ml-classification"],
+      "duree_heures": 6,
+      "niveau": "avancé",
+      "priorite": 8
+    },
+    {
+      "id": "deep-learning",
+      "titre": "Introduction Deep Learning",
+      "competences": ["réseaux de neurones", "keras", "tensorflow"],
+      "prerequis": ["ml-evaluation"],
+      "duree_heures": 10,
+      "niveau": "avancé",
+      "priorite": 9
+    }
+  ]
+}
