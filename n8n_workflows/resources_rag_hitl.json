@@ -1,0 +1,175 @@
+{
+  "name": "resources_rag_hitl",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pathwise-resources",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -48,
+        -64
+      ],
+      "id": "9f9da6ba-15a0-44c8-84d3-5e57e4222c63",
+      "name": "Webhook",
+      "webhookId": "974deb3f-624b-41ed-ac28-062b6d8034a6"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/ressources",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"module\": \"={{ $json.body.module }}\",\n  \"niveau\": \"={{ $json.body.niveau }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        128,
+        112
+      ],
+      "id": "29e3f066-14c1-4689-aea3-237a32452207",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "94984399-54f6-46f0-b06e-6960bcdce622",
+              "name": "ressources",
+              "value": "={{ $json.ressources }}",
+              "type": "string"
+            },
+            {
+              "id": "f1cdf720-6661-4591-a08e-f72b3696c60b",
+              "name": "source",
+              "value": "={{ $json.source }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        320,
+        -64
+      ],
+      "id": "abaebe82-8c16-468c-b868-c1f191740bf2",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "fromEmail": "nasrihiba70@gmail.com",
+        "toEmail": "nasrihiba20@gmail.com",
+        "subject": "[PathWise HITL] Validation ressources - {{ $('Edit Fields').item.json.ressources_trouvees[0].title }}",
+        "emailFormat": "text",
+        "text": "Bonjour,\n\nPathWise a trouvé des ressources pour le module python-bases.\n\nApprouver : http://localhost:5678/webhook/pathwise-approve?status=approved\nRejeter : http://localhost:5678/webhook/pathwise-approve?status=rejected\n\nMerci !",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        496,
+        112
+      ],
+      "id": "4a600c71-1b0b-4dfe-ba0e-4eae0c4bbbc0",
+      "name": "Send an Email",
+      "webhookId": "d4d41edc-499d-493b-aa6f-01079069c04f",
+      "credentials": {
+        "smtp": {
+          "id": "eiZmeqoZaRQcr7Uv",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "incomingAuthentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        -64
+      ],
+      "id": "d2bdc3cf-ef40-4a56-b607-9f5a05211d45",
+      "name": "Wait",
+      "webhookId": "09fce862-c1e9-48cc-bc4b-a1cc684e90f3",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zFCF9qIK3NpSA0qr",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send an Email": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0f3f90e8-5e1f-4a31-9d78-71792ff7ee31",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"
+  },
+  "id": "n4VruS2YMgUKK6Ym",
+  "tags": []
+}

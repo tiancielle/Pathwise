@@ -1,0 +1,107 @@
+{
+  "name": "evaluator_quiz",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pathwise-quiz",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "92eb010d-5d7a-47c3-9f8a-088f516ad4a8",
+      "name": "Webhook",
+      "webhookId": "53fa5b1d-a1b5-4081-8ed9-9287a221f4c5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://models.inference.ai.azure.com/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Tu es un agent évaluateur. Génère exactement 5 QCM en JSON valide uniquement, sans texte avant ou après.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"={{ 'Génère 5 QCM pour le module: ' + $json.body.module + ' niveau: ' + $json.body.niveau + '. Format JSON: {\\\"quiz\\\": [{\\\"question\\\": \\\"...\\\", \\\"options\\\": [\\\"A\\\", \\\"B\\\", \\\"C\\\", \\\"D\\\"], \\\"correct\\\": \\\"A\\\", \\\"explication\\\": \\\"...\\\"}]}' }}\"\n    }\n  ],\n  \"temperature\": 0.3\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "dd02ff82-8ace-4df3-895d-996ab8999f13",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zFCF9qIK3NpSA0qr",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8e3880a8-2da1-496e-af48-5e2a89c11eb0",
+              "name": "quiz",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "ee911a83-2602-4ed1-b770-b0d66528374c",
+      "name": "Edit Fields"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2e0bb324-1992-4cc5-b494-3a29380383bd",
+  "meta": {
+    "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"
+  },
+  "id": "44Z5JnJOoaMDfogO",
+  "tags": []
+}

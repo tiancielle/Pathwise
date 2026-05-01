@@ -1,0 +1,107 @@
+{
+  "name": "planner",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://models.inference.ai.azure.com/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Tu es un agent planificateur pédagogique expert. Tu génères des parcours d'apprentissage personnalisés. Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"={{ 'Profil étudiant:\\n' + $json.body.profil + '\\n\\nGraphe de compétences:\\n' + $json.body.graphe + '\\n\\nGénère un learning path JSON ordonné avec les champs: etudiant, duree_totale_heures, modules (ordre, id, titre, duree_heures, priorite, raison)' }}\"\n    }\n  ],\n  \"temperature\": 0.3\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "d1027818-edcb-4917-969e-b9b9422b5f0e",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zFCF9qIK3NpSA0qr",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c31ed11e-dc3a-4f84-9303-738604daeafc",
+              "name": "learning_path",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "e7381ee5-2859-4d36-8b44-d06f22258c48",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pathwise-planner",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "7322c2fa-94dd-4934-b024-2fcf3426cdd2",
+      "name": "Webhook",
+      "webhookId": "7e49e91b-b05d-4d60-b473-279daff3b0ef"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b2ac58e9-3d63-44df-9d1b-2cb2aedca6b0",
+  "meta": {
+    "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"
+  },
+  "id": "dlwXzZS5b80T3OGJ",
+  "tags": []
+}

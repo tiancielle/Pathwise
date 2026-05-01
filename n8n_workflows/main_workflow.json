@@ -1,0 +1,165 @@
+{
+  "name": "main_workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pathwise-main",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -144,
+        0
+      ],
+      "id": "46ed4c6f-2e29-416d-bd1b-a2190f1e69b0",
+      "name": "Webhook",
+      "webhookId": "eb160fdf-3589-466d-be34-fb3c8b63d2ae"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/pathwise-profile",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"nom\": \"={{ $json.body.nom }}\",\n  \"niveau\": \"={{ $json.body.niveau }}\",\n  \"objectifs\": \"={{ $json.body.objectifs }}\",\n  \"style\": \"={{ $json.body.style }}\",\n  \"disponibilite\": \"={{ $json.body.disponibilite }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        64,
+        -112
+      ],
+      "id": "0baa68f7-1b6e-4e26-9df1-c606329d3981",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/pathwise-planner",
+        "sendBody": true,
+        "contentType": "raw",
+        "body": "={{ JSON.stringify({ \"profil\": $('HTTP Request').item.json.profil_etudiant, \"graphe\": JSON.stringify($('Webhook').item.json.body) }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        256,
+        112
+      ],
+      "id": "653649ec-d46f-42b0-be45-18940c382eec",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/pathwise-resources",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"module\": \"={{ $('Webhook').item.json.body.objectifs }}\",\n  \"niveau\": \"={{ $('Webhook').item.json.body.niveau }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        -112
+      ],
+      "id": "99a7ffdb-31ba-4441-b31f-22e7ec253e47",
+      "name": "HTTP Request2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zFCF9qIK3NpSA0qr",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6027a8fa-fc55-439b-a355-b4bd13534fff",
+              "name": "parcours_complet",
+              "value": "=Parcours généré avec succès pour {{ $('Webhook').item.json.body.nom }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        0
+      ],
+      "id": "c65da0bd-f5f1-457f-a7b6-a8c2382a4c6c",
+      "name": "Edit Fields"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1908ff05-5996-4f84-b91c-0df6dcce7850",
+  "meta": {
+    "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"
+  },
+  "id": "mfSIZvgzo8XVheCP",
+  "tags": []
+}

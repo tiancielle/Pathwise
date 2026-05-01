@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from typing import Any
 import sqlite3
 import json
 
@@ -44,3 +45,35 @@ class ResourceRequest(BaseModel):
 def get_ressources(data: ResourceRequest):
     results = get_resources(data.module, data.niveau)
     return {"status": "ok", "source": results["source"], "ressources": results["results"]}
+
+class QuizResult(BaseModel):
+    etudiant_id: int
+    module: str
+    reponses: list[Any]
+
+@app.post("/api/quiz/score")
+def calculer_score(data: QuizResult):
+    total = len(data.reponses)
+    correct = sum(
+        1 for r in data.reponses
+        if isinstance(r, dict) and r.get("reponse") == r.get("correct")
+    )
+    score = (correct / total) * 100 if total > 0 else 0
+    lacune = score < 60
+
+    conn = sqlite3.connect("pathwise.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO sessions (etudiant_id, module, score) VALUES (?, ?, ?)",
+        (data.etudiant_id, data.module, score)
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "score": score,
+        "correct": correct,
+        "total": total,
+        "lacune": lacune,
+        "recommandation": "Réviser le module" if lacune else "Module validé "
+    }
