@@ -1,31 +1,29 @@
 import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
-import { Zap, Play } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { Zap, Play, ArrowUp } from 'lucide-react'
 import { PageWrapper } from '../components/layout/PageWrapper'
 import { QuestionCard } from '../components/quiz/QuestionCard'
 import { ScoreCard } from '../components/quiz/ScoreCard'
 import { Button } from '../components/common/Button'
 import { Loader } from '../components/common/Loader'
 import { useQuiz } from '../hooks/useQuiz'
+import { useApp } from '../context/AppContext'
 
 export function QuizPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { state } = useApp()
+
+  // Reçoit moduleId et moduleName si vient d'un ModuleCard
+  const moduleId = location.state?.moduleId
+  const moduleName = location.state?.moduleName
+
   const {
-    questions,
-    currentQuestion,
-    currentIndex,
-    totalQuestions,
-    result,
-    isLoading,
-    started,
-    startQuiz,
-    answerQuestion,
-    finish,
-    reset,
+    questions, currentQuestion, currentIndex,
+    totalQuestions, result, isLoading, started, startQuiz, answerQuestion, finish, reset,
   } = useQuiz()
 
-  // Auto-finish quand toutes les questions sont répondues
   useEffect(() => {
     if (started && questions.length > 0 && currentIndex >= totalQuestions) {
       finish()
@@ -34,18 +32,25 @@ export function QuizPage() {
 
   const handleAnswer = (selectedOption: number) => {
     if (!currentQuestion) return
-    const timeSpent = 30
-    answerQuestion(currentQuestion.id, selectedOption, timeSpent)
+    answerQuestion(currentQuestion.id, selectedOption, 30)
   }
+
+  // Détecte si level up
+  const oldNiveau = localStorage.getItem('pw_level_before') || 'debutant'
+  const newNiveau = state.user?.niveau || 'debutant'
+  const leveledUp = result && oldNiveau !== newNiveau
 
   return (
     <PageWrapper>
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-800">Quiz d'évaluation</h1>
+          <h1 className="text-2xl font-bold text-slate-800">
+            {moduleName ? `Quiz — ${moduleName}` : 'Quiz d\'évaluation'}
+          </h1>
           <p className="text-slate-500 mt-1">
-            Testez vos connaissances pour affiner votre parcours.
+            {moduleName
+              ? `Testez vos connaissances sur ce module.`
+              : 'Testez vos connaissances pour affiner votre parcours.'}
           </p>
         </div>
 
@@ -63,35 +68,33 @@ export function QuizPage() {
             >
               <Zap className="w-10 h-10 text-white" />
             </motion.div>
-
             <h2 className="text-2xl font-bold text-slate-800 mb-3">
-              Évaluation rapide
+              {moduleName ? `Quiz sur "${moduleName}"` : 'Évaluation rapide'}
             </h2>
             <p className="text-slate-500 mb-8 leading-relaxed max-w-md mx-auto">
-              Répondez à quelques questions pour que nous puissions
-              construire votre parcours parfaitement adapté à votre niveau réel.
+              {moduleName
+                ? `Répondez aux questions pour valider votre compréhension du module et débloquer le niveau suivant.`
+                : `Répondez à quelques questions pour construire votre parcours adapté.`}
             </p>
-
             <div className="grid grid-cols-3 gap-4 mb-8">
               {[
                 { label: 'Questions', value: '~5' },
                 { label: 'Durée', value: '~3 min' },
                 { label: 'Type', value: 'QCM' },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className="p-4 rounded-xl bg-slate-50 border border-slate-100"
-                >
+              ].map(stat => (
+                <div key={stat.label} className="p-4 rounded-xl bg-slate-50 border border-slate-100">
                   <p className="text-xl font-bold text-indigo-600">{stat.value}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{stat.label}</p>
                 </div>
               ))}
             </div>
-
             <Button
               size="lg"
               loading={isLoading}
-              onClick={startQuiz}
+              onClick={() => {
+                localStorage.setItem('pw_level_before', state.user?.niveau || 'debutant')
+                startQuiz(moduleId, moduleName)
+              }}
               icon={<Play className="w-5 h-5" />}
             >
               Commencer le quiz
@@ -121,21 +124,34 @@ export function QuizPage() {
 
         {/* Résultats */}
         {result && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {/* Level Up Banner */}
+            {leveledUp && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-500 text-white text-center shadow-lg"
+              >
+                <ArrowUp className="w-8 h-8 mx-auto mb-2" />
+                <p className="text-xl font-bold">🎉 Level Up !</p>
+                <p className="text-white/90 text-sm mt-1">
+                  Vous êtes passé de{' '}
+                  <span className="font-bold capitalize">{oldNiveau}</span>
+                  {' '}à{' '}
+                  <span className="font-bold capitalize">{newNiveau}</span> !
+                </p>
+              </motion.div>
+            )}
+
             <div className="text-center mb-8">
               <h2 className="text-2xl font-bold text-slate-800">Vos résultats</h2>
               <p className="text-slate-500 mt-1">
-                Voici ce que nous avons appris de vos réponses
+                {moduleName ? `Module : ${moduleName}` : 'Voici ce que nous avons appris'}
               </p>
             </div>
             <ScoreCard
               result={result}
-              onRetry={() => {
-                reset()
-              }}
+              onRetry={() => reset()}
               onContinue={() => navigate('/learning')}
             />
           </motion.div>

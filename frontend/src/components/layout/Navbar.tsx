@@ -1,14 +1,13 @@
 import { motion } from 'framer-motion'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { BookOpen, LayoutDashboard, Zap, BarChart3, MessageSquare, LogOut, User } from 'lucide-react'
+import { BookOpen, LayoutDashboard, Zap, MessageSquare, LogOut, User } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 
 const navItems = [
-  { path: '/dashboard', label: 'Accueil', icon: LayoutDashboard },
-  { path: '/learning', label: 'Parcours', icon: BookOpen },
-  { path: '/quiz', label: 'Quiz', icon: Zap },
-  { path: '/chat', label: 'Agent IA', icon: MessageSquare },
-  { path: '/progress', label: 'Progrès', icon: BarChart3 },
+  { path: '/dashboard', label: 'Accueil',   icon: LayoutDashboard },
+  { path: '/learning',  label: 'Parcours',  icon: BookOpen },
+  { path: '/quiz',      label: 'Quiz',      icon: Zap },
+  { path: '/chat',      label: 'Agent IA',  icon: MessageSquare },
 ]
 
 export function Navbar() {
@@ -37,7 +36,7 @@ export function Navbar() {
           <div className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
               const Icon = item.icon
-              const isActive = location.pathname === item.path
+              const isActive = location.pathname.startsWith(item.path)
               return (
                 <motion.button
                   key={item.path}
@@ -57,14 +56,17 @@ export function Navbar() {
             })}
           </div>
 
-          {/* User Profile + Logout */}
+          {/* User + Logout */}
           <div className="flex items-center gap-2">
-            {/* ✅ Profile clickable */}
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => navigate('/profile')}
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50 transition-all"
+              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${
+                location.pathname === '/profile'
+                  ? 'bg-indigo-50 border-indigo-200'
+                  : 'bg-slate-50 border-slate-100 hover:border-indigo-200 hover:bg-indigo-50'
+              }`}
             >
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center">
                 <User className="w-3.5 h-3.5 text-white" />
@@ -75,7 +77,6 @@ export function Navbar() {
               </div>
             </motion.button>
 
-            {/* Logout */}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -88,9 +89,9 @@ export function Navbar() {
           </div>
         </div>
 
-        {/* Mobile Nav */}
+        {/* Mobile */}
         <div className="md:hidden flex items-center gap-1 pb-2 overflow-x-auto">
-          {navItems.map((item) => {
+          {[...navItems, { path: '/profile', label: 'Profil', icon: User }].map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
             return (
@@ -98,9 +99,7 @@ export function Navbar() {
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                  isActive
-                    ? 'bg-indigo-50 text-indigo-600'
-                    : 'text-slate-500 hover:bg-slate-50'
+                  isActive ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />

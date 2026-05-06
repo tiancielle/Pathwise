@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useApp } from '../context/AppContext'
 import { fetchQuestions, submitQuiz } from '../services/quizService'
 import type { AnswerInput } from '../services/quizService'
+import { updateProfil } from '../services/profileService'
 
 export function useQuiz() {
   const { state, dispatch } = useApp()
@@ -9,12 +10,18 @@ export function useQuiz() {
   const [answers, setAnswers] = useState<AnswerInput[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [started, setStarted] = useState(false)
+  const [currentModule, setCurrentModule] = useState<string | null>(null)
 
-  const startQuiz = useCallback(async () => {
+  const startQuiz = useCallback(async (moduleId?: string, moduleName?: string) => {
     setIsLoading(true)
     try {
-      const subject = localStorage.getItem('pw_subject') || 'machine_learning'
+      const subject = moduleId ||
+        localStorage.getItem('pw_subject') || 'machine_learning'
       const level = localStorage.getItem('pw_level') || 'debutant'
+
+      // Si quiz par module, utilise le nom du module comme sujet
+      if (moduleName) setCurrentModule(moduleName)
+
       const questions = await fetchQuestions(subject, level)
       dispatch({ type: 'SET_QUIZ_QUESTIONS', payload: questions })
       setCurrentIndex(0)
@@ -25,9 +32,12 @@ export function useQuiz() {
     }
   }, [dispatch])
 
-  const answerQuestion = useCallback((questionId: string, selectedOption: number, timeSpent: number) => {
-    const answer: AnswerInput = { questionId, selectedOption, timeSpent }
-    setAnswers(prev => [...prev, answer])
+  const answerQuestion = useCallback((
+    questionId: string,
+    selectedOption: number,
+    timeSpent: number
+  ) => {
+    setAnswers(prev => [...prev, { questionId, selectedOption, timeSpent }])
     setCurrentIndex(prev => prev + 1)
   }, [])
 
@@ -41,6 +51,33 @@ export function useQuiz() {
         questions: state.quizQuestions,
       })
       dispatch({ type: 'SET_QUIZ_RESULT', payload: result })
+
+      // ── Level up automatique ─────────────────────────────────────────────
+      const newNiveau =
+        result.percentage >= 75 ? 'avance' :
+        result.percentage >= 45 ? 'intermediaire' :
+        'debutant'
+
+      const currentNiveau = state.user.niveau
+      const niveauOrder = { debutant: 0, intermediaire: 1, avance: 2 }
+
+      // Monte le niveau uniquement (jamais redescend)
+      if (niveauOrder[newNiveau as keyof typeof niveauOrder] >
+          niveauOrder[currentNiveau as keyof typeof niveauOrder]) {
+        try {
+          await updateProfil(state.user.id, { niveau: newNiveau } as never)
+          const updatedUser = { ...state.user, niveau: newNiveau as 'debutant' | 'intermediaire' | 'avance' }
+          dispatch({
+            type: 'SET_AUTH',
+            payload: { user: updatedUser, token: localStorage.getItem('pw_token') || '' }
+          })
+          localStorage.setItem('pw_user', JSON.stringify(updatedUser))
+          localStorage.setItem('pw_level', newNiveau)
+        } catch {
+          console.warn('Level up non sauvegardé')
+        }
+      }
+
       return result
     } finally {
       setIsLoading(false)
@@ -51,6 +88,7 @@ export function useQuiz() {
     setCurrentIndex(0)
     setAnswers([])
     setStarted(false)
+    setCurrentModule(null)
     dispatch({ type: 'SET_QUIZ_QUESTIONS', payload: [] })
     dispatch({ type: 'SET_QUIZ_RESULT', payload: null })
   }, [dispatch])
@@ -64,6 +102,7 @@ export function useQuiz() {
     isLoading,
     started,
     answers,
+    currentModule,
     startQuiz,
     answerQuestion,
     finish,
