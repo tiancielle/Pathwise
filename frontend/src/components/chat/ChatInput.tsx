@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Paperclip, Loader2 } from 'lucide-react'
 
 interface ChatInputProps {
@@ -34,22 +34,27 @@ export function ChatInput({ onSend, onUpload, isLoading, isUploading }: ChatInpu
 
   return (
     <div className="border-t border-slate-100 bg-white p-4">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,.docx,.txt"
+        onChange={handleFile}
+        className="hidden"
+      />
+
       <div className="flex items-end gap-3 max-w-4xl mx-auto">
         {/* Upload */}
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".pdf,.docx,.txt"
-          onChange={handleFile}
-          className="hidden"
-        />
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => fileRef.current?.click()}
           disabled={isUploading}
-          className="p-3 rounded-xl border border-slate-200 text-slate-500 hover:text-indigo-500 hover:border-indigo-200 hover:bg-indigo-50 transition-all flex-shrink-0"
-          title="Uploader un document (PDF, DOCX)"
+          className={`p-3 rounded-xl border transition-all flex-shrink-0 ${
+            isUploading
+              ? 'border-indigo-200 bg-indigo-50 text-indigo-400 cursor-wait'
+              : 'border-slate-200 text-slate-500 hover:text-indigo-500 hover:border-indigo-200 hover:bg-indigo-50'
+          }`}
+          title="Uploader un document (PDF, DOCX, TXT)"
         >
           {isUploading
             ? <Loader2 className="w-5 h-5 animate-spin" />
@@ -84,7 +89,7 @@ export function ChatInput({ onSend, onUpload, isLoading, isUploading }: ChatInpu
       </div>
 
       <p className="text-center text-xs text-slate-400 mt-2">
-        Entrée pour envoyer · Shift+Entrée pour nouvelle ligne · 📎 pour uploader un PDF/DOCX
+        Entrée pour envoyer · Shift+Entrée pour nouvelle ligne · 📎 PDF, DOCX, TXT
       </p>
     </div>
   )

@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useApp } from '../context/AppContext'
-import { getLearningPath, generateLearningPath } from '../services/learningService'
+import { getAllParcours, generateLearningPath, getModulesFromParcours, completeModule } from '../services/learningService'
 import type { Module } from '../types'
 
 export function useLearning() {
@@ -10,10 +10,15 @@ export function useLearning() {
     if (!state.user) return
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const modules = await getLearningPath(state.user.id)
-      dispatch({ type: 'SET_MODULES', payload: modules })
+      const parcours = await getAllParcours(state.user.id)
+      if (parcours.length > 0) {
+        const latest = parcours[parcours.length - 1]
+        const modules = getModulesFromParcours(latest)
+        dispatch({ type: 'SET_MODULES', payload: modules })
+      } else {
+        await generatePath()
+      }
     } catch {
-      // Pas de parcours → génère
       await generatePath()
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false })
@@ -24,11 +29,11 @@ export function useLearning() {
     if (!state.user) return
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const modules = await generateLearningPath({
+      const subject = localStorage.getItem('pw_subject') || 'machine_learning'
+      const { modules } = await generateLearningPath({
         etudiant_id: state.user.id,
-        niveau: state.user.niveau,
-        objectifs: state.user.objectifs,
-        subject: localStorage.getItem('pw_subject') || 'machine_learning',
+        subject,
+        level: state.user.niveau,
       })
       dispatch({ type: 'SET_MODULES', payload: modules })
     } catch {
@@ -43,12 +48,17 @@ export function useLearning() {
     await generatePath()
   }, [generatePath])
 
-  const toggleModule = useCallback((module: Module) => {
-    dispatch({
-      type: 'UPDATE_MODULE',
-      payload: { ...module, completed: !module.completed },
-    })
-  }, [dispatch])
+  // ✅ signature corrigée : 4 arguments
+  const toggleModule = useCallback(async (
+    module: Module,
+    pathId?: number
+  ) => {
+    const updated = { ...module, completed: !module.completed }
+    dispatch({ type: 'UPDATE_MODULE', payload: updated })
+    if (state.user && pathId) {
+      await completeModule(pathId, module.id, state.user.id, updated.completed)
+    }
+  }, [dispatch, state.user])
 
   const completedCount = state.modules.filter(m => m.completed).length
   const progress = state.modules.length > 0

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useApp } from '../context/AppContext'
-import { sendMessage, searchRag, uploadDocument } from '../services/chatService'
-import type { ChatMessage } from '../types'
+import { sendMessage, uploadDocument } from '../services/chatService'
+import type { ChatMessage, ExternalResource } from '../types'
 
 export function useChat() {
   const { state, dispatch } = useApp()
@@ -22,27 +22,33 @@ export function useChat() {
     setIsTyping(true)
 
     try {
-      const { reply, sources } = await sendMessage({
+      const { reply, sources, external_resources } = await sendMessage({
         message: content,
         etudiant_id: state.user.id,
       })
 
-      const assistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: reply,
-        timestamp: new Date(),
-        sources,
-      }
-      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: assistantMsg })
-    } catch {
-      const errorMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Désolé, une erreur est survenue. Réessayez.',
-        timestamp: new Date(),
-      }
-      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: errorMsg })
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: reply,
+          timestamp: new Date(),
+          sources,
+          external_resources: external_resources as ExternalResource[],
+        },
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur serveur'
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ ${msg}`,
+          timestamp: new Date(),
+        },
+      })
     } finally {
       setIsTyping(false)
     }
@@ -51,22 +57,36 @@ export function useChat() {
   const handleUpload = useCallback(async (file: File) => {
     if (!state.user) return
     setIsUploading(true)
-    try {
-      await uploadDocument(file, state.user.id)
-      const msg: ChatMessage = {
+
+    dispatch({
+      type: 'ADD_CHAT_MESSAGE',
+      payload: {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `✅ Document "${file.name}" uploadé et indexé ! Je peux maintenant répondre à vos questions sur ce contenu.`,
+        content: `⏳ Upload de "${file.name}" en cours... indexation dans ChromaDB.`,
         timestamp: new Date(),
-      }
-      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: msg })
-    } catch {
+      },
+    })
+
+    try {
+      const result = await uploadDocument(file, state.user.id)
       dispatch({
         type: 'ADD_CHAT_MESSAGE',
         payload: {
-          id: Date.now().toString(),
+          id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: "❌ Erreur lors de l'upload. Vérifiez le format du fichier (PDF, DOCX).",
+          content: `✅ "${result.filename}" indexé avec succès !\n📦 ${result.nb_chunks} chunks ajoutés à la base de connaissances (${result.size_mb} MB)\nPosez maintenant vos questions sur ce document !`,
+          timestamp: new Date(),
+        },
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erreur upload"
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ ${msg}`,
           timestamp: new Date(),
         },
       })
@@ -75,17 +95,12 @@ export function useChat() {
     }
   }, [state.user, dispatch])
 
-  const searchResources = useCallback(async (query: string) => {
-    return await searchRag(query)
-  }, [])
-
   return {
     messages: state.chatMessages,
     isTyping,
     isUploading,
     sendMessage: sendUserMessage,
     handleUpload,
-    searchResources,
     clearChat: () => dispatch({ type: 'CLEAR_CHAT' }),
   }
 }

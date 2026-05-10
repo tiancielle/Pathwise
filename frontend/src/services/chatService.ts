@@ -1,61 +1,81 @@
-import api from './api'
-
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: Date
-  sources?: string[]
-}
+import { getStoredToken } from './authService'
 
 export async function sendMessage(payload: {
   message: string
   etudiant_id: number
-}): Promise<{ reply: string; sources?: string[] }> {
-  // Utilise le RAG ChromaDB pour chercher des ressources
-  try {
-    const { data } = await api.get('/ressources', {
-      params: { query: payload.message, n: 5 },
-    })
-    const results = data.results || []
+}): Promise<{
+  reply: string
+  sources: string[]
+  external_resources: Array<{ title: string; url: string; description: string; type: string }>
+}> {
+  const token = getStoredToken()
 
-    // Construit une réponse depuis les résultats RAG
-    if (results.length > 0) {
-      const content = results
-        .slice(0, 3)
-        .map((r: { content: string; source?: string }, i: number) => 
-          `**Source ${i + 1}** (${r.source || 'PathWise KB'}):\n${r.content?.slice(0, 300)}...`
-        )
-        .join('\n\n')
+  const response = await fetch('/api/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      message: payload.message,
+      etudiant_id: payload.etudiant_id,
+    }),
+  })
 
-      return {
-        reply: `Voici ce que j'ai trouvé dans notre base de connaissances :\n\n${content}\n\n💡 Vous pouvez me poser des questions plus spécifiques sur ces concepts !`,
-        sources: results.map((r: { source?: string }) => r.source || 'PathWise KB').slice(0, 3),
-      }
-    }
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.detail || `Erreur ${response.status}`)
+  }
 
-    return {
-      reply: "Je n'ai pas trouvé de ressources spécifiques sur ce sujet dans notre base. Essayez avec des termes comme 'machine learning', 'neural network', 'NLP', ou 'transformers'.",
-    }
-  } catch {
-    return {
-      reply: "Désolé, je rencontre des difficultés à accéder à la base de connaissances. Vérifiez que le backend est bien démarré.",
-    }
+  const data = await response.json()
+
+  return {
+    reply: data.reply || "Pas de réponse.",
+    sources: data.sources || [],
+    external_resources: data.external_resources || [],
   }
 }
 
-export async function searchRag(query: string, nResults = 5) {
-  const { data } = await api.get('/ressources', {
-    params: { query, n: nResults },
-  })
-  return data.results || data
-}
+export async function uploadDocument(
+  file: File,
+  etudiantId: number
+): Promise<{ message: string; filename: string; size_mb: number; indexed: boolean; nb_chunks: number }> {
+  const token = getStoredToken()
 
-export async function uploadDocument(file: File, etudiantId: number) {
+  const allowedTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+  ]
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Format non supporté. Utilisez PDF, DOCX ou TXT.')
+  }
+
   const formData = new FormData()
   formData.append('file', file)
-  formData.append('etudiant_id', String(etudiantId))
-  const { data } = await api.post('/ressources/index', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+
+  const response = await fetch('/api/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
   })
-  return data
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.detail || "Erreur lors de l'upload")
+  }
+
+  return response.json()
+}
+
+export async function searchRag(query: string, nResults = 5) {
+  const token = getStoredToken()
+  const response = await fetch(
+    `/api/ressources?query=${encodeURIComponent(query)}&n=${nResults}`,
+    { headers: { 'Authorization': `Bearer ${token}` } }
+  )
+  const data = await response.json()
+  return data.results || data
 }

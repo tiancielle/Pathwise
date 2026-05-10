@@ -1,9 +1,9 @@
 """
 PathWise — FastAPI Backend
-
+EMSI 2026 | Nasri Hiba & Sabir Malak | Mme Hasnâa Chaabi
 """
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
@@ -12,6 +12,9 @@ import sqlite3
 import bcrypt
 import jwt
 import os
+import json
+import httpx
+import shutil
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -28,6 +31,11 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 JWT_SECRET     = os.getenv("JWT_SECRET", "pathwise_secret_emsi_2026")
 JWT_ALGORITHM  = "HS256"
 JWT_EXPIRY_H   = 24
+
+# ── GitHub Models (GPT-4o-mini) ───────────────
+GITHUB_TOKEN   = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_API_KEY")
+AZURE_ENDPOINT = "https://models.inference.ai.azure.com/chat/completions"
+GPT_MODEL      = "gpt-4o-mini"
 
 app = FastAPI(
     title="PathWise API",
@@ -92,6 +100,47 @@ class ProfilUpdate(BaseModel):
     niveau: Optional[str] = None
     objectifs: Optional[str] = None
 
+# ── Nouveaux schémas ─────────────────────────
+class ChatRequest(BaseModel):
+    message: str
+    etudiant_id: int
+
+class ExternalResource(BaseModel):
+    title: str
+    url: str
+    description: str
+    type: str        # "article" | "video" | "documentation" | "web"
+
+class ChatResponse(BaseModel):
+    reply: str
+    sources: List[str]                        # noms PDFs locaux (contexte explication)
+    external_resources: List[ExternalResource]  # vraies ressources externes Tavily
+
+class QuizRequest(BaseModel):
+    subject: str
+    level: str          # "débutant" | "intermédiaire" | "avancé"
+    profile_id: int
+
+class QuizQuestion(BaseModel):
+    id: int
+    question: str
+    options: List[str]   # exactement 4 options
+    correctAnswer: int   # index 0–3
+    explanation: str
+
+class QuizQuestionsResponse(BaseModel):
+    questions: List[QuizQuestion]
+
+# ── Schémas Learning Path ────────────────────
+class GenerateLearningPathRequest(BaseModel):
+    etudiant_id: int
+    subject: str        # "machine learning", "react", "python"...
+    level: Optional[str] = None   # si None → récupéré depuis le profil
+
+class ModuleCompleteRequest(BaseModel):
+    etudiant_id: int
+    completed: bool
+
 # ─────────────────────────────────────────────
 # HELPERS JWT
 # ─────────────────────────────────────────────
@@ -123,6 +172,50 @@ def require_same_user(etudiant_id: int, current: dict = Depends(get_current_user
     if int(current["sub"]) != etudiant_id:
         raise HTTPException(status_code=403, detail="Accès interdit à ce profil")
     return current
+
+# ─────────────────────────────────────────────
+# HELPER — Appel GPT-4o-mini via GitHub Models
+# ─────────────────────────────────────────────
+async def call_gpt(messages: list, temperature: float = 0.7, max_tokens: int = 1024) -> str:
+    """
+    Envoie une liste de messages à GPT-4o-mini via GitHub Models (Azure endpoint)
+    et retourne le contenu textuel de la réponse.
+    Lève une HTTPException 502 si l'API est injoignable.
+    """
+    if not GITHUB_TOKEN:
+        raise HTTPException(
+            status_code=500,
+            detail="GITHUB_TOKEN manquant dans le fichier .env"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": GPT_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(AZURE_ENDPOINT, headers=headers, json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Erreur GitHub Models : {e.response.status_code} — {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Impossible de joindre GitHub Models : {str(e)}"
+            )
+
+    data = response.json()
+    return data["choices"][0]["message"]["content"]
 
 # ─────────────────────────────────────────────
 # AUTH — /api/auth
@@ -178,7 +271,7 @@ def me(current: dict = Depends(get_current_user)):
     return dict(row)
 
 # ─────────────────────────────────────────────
-# PROFIL — /api/profil  (route existante + mise à jour)
+# PROFIL — /api/profil
 # ─────────────────────────────────────────────
 @app.get("/api/profil/{etudiant_id}", tags=["Profil"])
 def get_profil(etudiant_id: int, current=Depends(get_current_user)):
@@ -227,7 +320,6 @@ def get_learning_path(etudiant_id: int, current=Depends(get_current_user)):
     ).fetchall()
     if not rows:
         raise HTTPException(status_code=404, detail="Aucun parcours trouvé pour cet étudiant")
-    import json
     result = []
     for r in rows:
         d = dict(r)
@@ -240,7 +332,6 @@ def get_learning_path(etudiant_id: int, current=Depends(get_current_user)):
           summary="Sauvegarde un parcours généré par les agents n8n")
 def save_learning_path(body: LearningPathCreate, current=Depends(get_current_user)):
     require_same_user(body.etudiant_id, current)
-    import json
     db = get_db()
     cur = db.execute(
         """INSERT INTO learning_paths (etudiant_id, titre, contenu, duree_estimee_h, date_creation)
@@ -311,7 +402,6 @@ def create_session(
           summary="Enregistre le résultat détaillé d'un quiz")
 def save_quiz_result(body: QuizResultCreate, current=Depends(get_current_user)):
     require_same_user(body.etudiant_id, current)
-    import json
     db = get_db()
     cur = db.execute(
         """INSERT INTO quiz_results
@@ -347,7 +437,6 @@ def get_quiz_score(etudiant_id: int, current=Depends(get_current_user)):
 @app.get("/api/quiz/history/{etudiant_id}", tags=["Quiz"])
 def get_quiz_history(etudiant_id: int, current=Depends(get_current_user)):
     require_same_user(etudiant_id, current)
-    import json
     db = get_db()
     rows = db.execute(
         """SELECT id, module_nom, score, nb_questions, nb_correctes, date_quiz
@@ -357,12 +446,135 @@ def get_quiz_history(etudiant_id: int, current=Depends(get_current_user)):
     ).fetchall()
     return [dict(r) for r in rows]
 
+
+@app.post("/api/quiz/questions", response_model=QuizQuestionsResponse, tags=["Quiz"],
+          summary="Génère 5 QCM variés via GPT-4o-mini selon le sujet et le niveau")
+async def generate_quiz_questions(body: QuizRequest, current=Depends(get_current_user)):
+    """
+    Génère 5 questions QCM via GPT-4o-mini.
+
+    Les 5 questions couvrent des catégories variées dans cet ordre :
+    1. Définition / concept théorique
+    2. Application pratique / code
+    3. Détection d'erreur ou comportement inattendu
+    4. Comparaison entre deux concepts proches
+    5. Scénario réel ou synthèse
+
+    Le modèle retourne du JSON pur — parsé et validé avant envoi au frontend.
+    """
+    QUIZ_SYSTEM_PROMPT = """Tu es un générateur de QCM pédagogiques pour étudiants en informatique.
+Tu réponds UNIQUEMENT avec du JSON valide, sans markdown, sans balises, sans texte autour.
+Le JSON doit respecter exactement ce schéma :
+{
+  "questions": [
+    {
+      "id": 1,
+      "question": "...",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "correctAnswer": 0,
+      "explanation": "..."
+    }
+  ]
+}
+Règles absolues :
+- "options" contient EXACTEMENT 4 chaînes commençant par A., B., C., D.
+- "correctAnswer" est l'index (0, 1, 2 ou 3) de la bonne réponse dans "options"
+- "explanation" explique pourquoi c'est la bonne réponse (2-3 phrases)
+- Toutes les questions et réponses sont en FRANÇAIS
+- Pas de répétition entre les 5 questions"""
+
+    user_prompt = f"""Génère exactement 5 questions QCM sur le sujet : **{body.subject}**
+Niveau cible : **{body.level}**
+
+Assure-toi que les 5 questions couvrent ces catégories dans cet ordre :
+1. Définition / concept théorique
+2. Application pratique / code
+3. Détection d'erreur ou de comportement inattendu
+4. Comparaison entre deux concepts proches
+5. Scénario réel ou synthèse"""
+
+    messages = [
+        {"role": "system", "content": QUIZ_SYSTEM_PROMPT},
+        {"role": "user",   "content": user_prompt},
+    ]
+
+    raw = await call_gpt(messages, temperature=0.8, max_tokens=1500)
+
+    # Nettoyage défensif des éventuels backticks markdown
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip().rstrip("```").strip()
+
+    # Parsing JSON
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Le modèle n'a pas retourné du JSON valide : {str(e)}\nRéponse brute : {raw[:300]}"
+        )
+
+    # Validation et normalisation
+    raw_questions = data.get("questions", [])
+    if not raw_questions:
+        raise HTTPException(status_code=500, detail="Le modèle a retourné 0 questions.")
+
+    validated = []
+    for idx, q in enumerate(raw_questions[:5], 1):
+        options = q.get("options", [])
+        # Compléter ou tronquer si le modèle a fait une erreur
+        while len(options) < 4:
+            options.append(f"{'ABCD'[len(options)]}. Option non disponible")
+        options = options[:4]
+
+        correct = max(0, min(3, int(q.get("correctAnswer", 0))))  # clamp 0-3
+
+        validated.append(QuizQuestion(
+            id=idx,
+            question=q.get("question", f"Question {idx}"),
+            options=options,
+            correctAnswer=correct,
+            explanation=q.get("explanation", "Pas d'explication disponible."),
+        ))
+
+    return QuizQuestionsResponse(questions=validated)
+
 # ─────────────────────────────────────────────
-# RESSOURCES — /api/ressources (route existante + RAG)
+# RESSOURCES — /api/ressources
 # ─────────────────────────────────────────────
+HITL_ENABLED     = os.getenv("HITL_ENABLED", "false").lower() == "true"
+N8N_HITL_WEBHOOK = os.getenv("N8N_HITL_WEBHOOK", "")
+
 @app.get("/api/ressources", tags=["Ressources"],
-         summary="Recherche RAG dans ChromaDB (PDFs indexés)")
-def get_ressources(query: str = "machine learning", n: int = 5):
+         summary="Recherche RAG dans ChromaDB — avec HITL si activé")
+async def get_ressources(query: str = "machine learning", n: int = 5):
+    # Relire à chaque requête pour prendre en compte les changements .env
+    hitl_enabled = os.getenv("HITL_ENABLED", "false").lower() == "true"
+    n8n_webhook  = os.getenv("N8N_HITL_WEBHOOK", "")
+
+    if hitl_enabled and n8n_webhook:
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                r = await client.post(n8n_webhook, json={
+                    "query": query,
+                    "n": n
+                })
+                return r.json()
+        except Exception:
+            results = search_resources(query, n_results=n)
+            return {"query": query, "results": results}
+    else:
+        results = search_resources(query, n_results=n)
+        return {"query": query, "results": results}
+
+
+@app.get("/api/ressources/direct", tags=["Ressources"],
+         summary="Route interne pour n8n — RAG direct sans HITL")
+def get_ressources_direct(query: str = "machine learning", n: int = 5):
+    """Route appelée par n8n uniquement — évite la boucle infinie HITL."""
     try:
         results = search_resources(query, n_results=n)
         return {"query": query, "results": results}
@@ -378,6 +590,150 @@ def trigger_indexing(current=Depends(get_current_user)):
         return {"message": f"{nb} PDFs indexés avec succès"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ─────────────────────────────────────────────
+# CHAT IA — /api/chat  (RAG + GPT-4o-mini)
+# ─────────────────────────────────────────────
+async def search_tavily(query: str, n: int = 4) -> list[ExternalResource]:
+    """
+    Recherche de ressources externes via Tavily API.
+    Retourne des articles, vidéos YouTube, docs officielles.
+    Retourne [] si la clé est absente ou si l'appel échoue.
+    """
+    tavily_key = os.getenv("TAVILY_API_KEY", "")
+    if not tavily_key:
+        return []
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key":              tavily_key,
+                    "query":                f"{query} tutorial explication ressources",
+                    "search_depth":         "basic",
+                    "include_answer":       False,
+                    "include_raw_content":  False,
+                    "max_results":          n,
+                    "include_domains":      [
+                        "youtube.com", "medium.com", "towardsdatascience.com",
+                        "arxiv.org", "developer.mozilla.org", "docs.python.org",
+                        "kaggle.com", "coursera.org", "openai.com", "huggingface.co",
+                        "geeksforgeeks.org", "freecodecamp.org", "github.com"
+                    ],
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return []
+
+    resources = []
+    for r in data.get("results", []):
+        url   = r.get("url", "")
+        title = r.get("title", "Ressource")
+        desc  = r.get("content", "")[:200]
+
+        # Détecter le type de ressource
+        if "youtube.com" in url or "youtu.be" in url:
+            rtype = "video"
+        elif any(d in url for d in ["arxiv.org", "docs.", "developer."]):
+            rtype = "documentation"
+        elif any(d in url for d in ["medium.com", "towardsdatascience.com",
+                                     "freecodecamp.org", "geeksforgeeks.org"]):
+            rtype = "article"
+        else:
+            rtype = "web"
+
+        resources.append(ExternalResource(
+            title=title,
+            url=url,
+            description=desc,
+            type=rtype,
+        ))
+
+    return resources
+
+
+@app.post("/api/chat", response_model=ChatResponse, tags=["Chat IA"],
+          summary="Agent conversationnel — ChromaDB (explication) + Tavily (ressources externes)")
+async def chat_with_agent(body: ChatRequest, current=Depends(get_current_user)):
+    """
+    Agent IA conversationnel.
+
+    Flux :
+      1. Récupère le profil étudiant pour personnaliser le ton.
+      2. ChromaDB  → chunks des PDFs uploadés par l'étudiant (contexte d'explication).
+      3. Tavily    → ressources externes réelles (articles, YouTube, docs).
+      4. GPT reçoit le contexte local et génère une explication claire.
+      5. Retourne { reply, sources (PDFs locaux), external_resources (Tavily) }.
+    """
+    # — 1. Profil étudiant
+    profil_context = ""
+    try:
+        db = get_db()
+        row = db.execute(
+            "SELECT niveau, objectifs FROM etudiants WHERE id = ?",
+            (body.etudiant_id,)
+        ).fetchone()
+        if row:
+            profil_context = (
+                f"L'étudiant a un niveau **{row['niveau']}** "
+                f"et ses objectifs sont : {row['objectifs']}."
+            )
+    except Exception:
+        pass
+
+    # — 2. ChromaDB : contexte local pour l'explication (PDFs uploadés)
+    rag_results    = search_resources(body.message, n_results=3)
+    context_blocks: list[str] = []
+    pdf_sources:    list[str] = []
+
+    for i, res in enumerate(rag_results, 1):
+        # search_resources() retourne "contenu" et "source" directement
+        content = res.get("contenu", res.get("content", res.get("document", "")))
+        source  = res.get("source", res.get("metadata", {}).get("source", f"Document {i}"))
+        if content and source != "système":
+            context_blocks.append(f"[Extrait {i} — {source}]\n{content}")
+            pdf_sources.append(source)
+
+    context_text = "\n\n".join(context_blocks) if context_blocks else ""
+
+    # — 3. Tavily : ressources externes en parallèle
+    external_resources = await search_tavily(body.message, n=4)
+
+    # — 4. Prompt GPT — axé explication, pas recommandation de ressources
+    has_context = bool(context_text)
+    system_prompt = f"""Tu es PathWise, un assistant pédagogique intelligent pour étudiants en informatique à l'EMSI.
+{f"Contexte étudiant : {profil_context}" if profil_context else ""}
+
+Ton rôle :
+- Expliquer clairement le concept demandé en français.
+- Être pédagogique, structuré et encourageant.
+- Adapter le niveau de détail au profil de l'étudiant.
+{f'''
+Tu as accès aux extraits des documents uploadés par l'étudiant.
+Utilise-les PRIORITAIREMENT pour expliquer, en citant le document si pertinent.
+
+--- EXTRAITS DES DOCUMENTS ---
+{context_text}
+--- FIN DES EXTRAITS ---''' if has_context else "Utilise tes connaissances générales pour expliquer."}
+
+NE PAS mentionner de liens ou ressources externes dans ta réponse — elles sont affichées séparément."""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user",   "content": body.message},
+    ]
+
+    # — 5. Appel GPT
+    reply = await call_gpt(messages, temperature=0.6, max_tokens=800)
+
+    return ChatResponse(
+        reply=reply,
+        sources=pdf_sources,
+        external_resources=external_resources,
+    )
 
 # ─────────────────────────────────────────────
 # STATS & DASHBOARD — /api/dashboard
@@ -406,19 +762,370 @@ def get_dashboard(etudiant_id: int, current=Depends(get_current_user)):
         (etudiant_id,),
     ).fetchone()
 
+    # — 5 dernières activités (quiz + sessions mélangés)
+    sessions_recentes = []
+
+    quiz_recents = db.execute(
+        """SELECT module_nom, score, date_quiz as date
+           FROM quiz_results WHERE etudiant_id = ?
+           ORDER BY date_quiz DESC LIMIT 5""",
+        (etudiant_id,),
+    ).fetchall()
+    for q in quiz_recents:
+        sessions_recentes.append({
+            "type":       "quiz",
+            "titre":      q["module_nom"],
+            "date":       q["date"],
+            "score":      round(q["score"] * 100, 1),
+            "duree":      None,
+        })
+
+    sessions_db = db.execute(
+        """SELECT module_nom, duree_minutes, date_session as date, statut
+           FROM sessions WHERE etudiant_id = ?
+           ORDER BY date_session DESC LIMIT 5""",
+        (etudiant_id,),
+    ).fetchall()
+    for s in sessions_db:
+        sessions_recentes.append({
+            "type":   "session",
+            "titre":  s["module_nom"],
+            "date":   s["date"],
+            "score":  None,
+            "duree":  s["duree_minutes"],
+        })
+
+    # Trier par date décroissante et garder les 5 plus récentes
+    sessions_recentes.sort(key=lambda x: x["date"] or "", reverse=True)
+    sessions_recentes = sessions_recentes[:5]
+
+    # Compter modules complétés dans tous les parcours
+    modules_completes = 0
+    all_paths = db.execute(
+        "SELECT contenu FROM learning_paths WHERE etudiant_id = ?", (etudiant_id,)
+    ).fetchall()
+    for p in all_paths:
+        contenu = json.loads(p["contenu"]) if isinstance(p["contenu"], str) else p["contenu"]
+        for m in contenu.get("modules", []):
+            if m.get("completed"):
+                modules_completes += 1
+
     return {
         "etudiant": etudiant,
         "quiz": {
-            "nb_quiz": stats_quiz["nb"],
-            "score_moyen": round((stats_quiz["avg_score"] or 0) * 100, 1),
+            "nb_quiz":        stats_quiz["nb"],
+            "score_moyen":    round((stats_quiz["avg_score"] or 0) * 100, 1),
             "meilleur_score": round((stats_quiz["best"] or 0) * 100, 1),
         },
         "sessions": {
-            "nb_sessions": stats_sessions["nb"],
+            "nb_sessions":   stats_sessions["nb"],
             "temps_total_h": round((stats_sessions["total_min"] or 0) / 60, 1),
         },
-        "dernier_parcours": dict(last_path) if last_path else None,
+        "modules_completes":  modules_completes,
+        "dernier_parcours":   dict(last_path) if last_path else None,
+        "sessions_recentes":  sessions_recentes,
     }
+
+# ─────────────────────────────────────────────
+# UPLOAD PDF — /api/upload
+# ─────────────────────────────────────────────
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+MAX_FILE_SIZE_MB   = 20
+
+@app.post("/api/upload", tags=["Upload"],
+          summary="Upload un PDF/DOCX — sauvegarde dans resources_raw/ et indexe dans ChromaDB")
+async def upload_document(
+    file: UploadFile = File(...),
+    current=Depends(get_current_user)
+):
+    """
+    Reçoit un fichier PDF ou DOCX uploadé par l'étudiant,
+    le sauvegarde dans data/resources_raw/ et l'indexe immédiatement dans ChromaDB.
+
+    Après cet appel, le fichier est disponible pour le RAG dans /api/chat.
+    """
+    # — Vérification extension
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Format non supporté : {ext}. Formats acceptés : PDF, DOCX, TXT"
+        )
+
+    # — Vérification taille (lecture partielle)
+    contents = await file.read()
+    size_mb = len(contents) / (1024 * 1024)
+    if size_mb > MAX_FILE_SIZE_MB:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Fichier trop volumineux : {size_mb:.1f} MB (max {MAX_FILE_SIZE_MB} MB)"
+        )
+
+    # — Dossier de destination
+    resources_dir = Path(__file__).parent.parent / "data" / "resources_raw"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+
+    # — Nom de fichier sécurisé (éviter les collisions)
+    safe_filename = f"{Path(file.filename).stem}_{int(datetime.utcnow().timestamp())}{ext}"
+    dest_path = resources_dir / safe_filename
+
+    # — Sauvegarde sur disque
+    with open(dest_path, "wb") as f:
+        f.write(contents)
+
+    # — Ré-indexation ChromaDB
+    try:
+        nb_indexed = index_all_pdfs()
+        indexed_ok = True
+    except Exception as e:
+        indexed_ok = False
+        nb_indexed = 0
+
+    # — Vider le cache RAG pour prendre en compte le nouveau fichier
+    try:
+        from rag.retriever import clear_cache
+        clear_cache()
+    except Exception:
+        pass
+
+    return {
+        "message":    f"✅ '{file.filename}' uploadé et indexé avec succès",
+        "filename":   safe_filename,
+        "size_mb":    round(size_mb, 2),
+        "indexed":    indexed_ok,
+        "nb_chunks":  nb_indexed,
+    }
+
+# ─────────────────────────────────────────────
+# GENERATE LEARNING PATH — /api/learning-path/generate
+# ─────────────────────────────────────────────
+@app.post("/api/learning-path/generate", status_code=201, tags=["Learning Path"],
+          summary="Génère un vrai parcours personnalisé via GPT-4o-mini + Tavily")
+async def generate_learning_path(body: GenerateLearningPathRequest, current=Depends(get_current_user)):
+    """
+    Génère un parcours d'apprentissage VRAIMENT personnalisé.
+
+    Flux :
+      1. Récupère le profil (niveau, objectifs) depuis SQLite.
+      2. Tavily cherche 6 vraies ressources sur le sujet.
+      3. GPT génère 5-6 modules ordonnés avec URLs réelles.
+      4. Sauvegarde en DB et retourne le parcours.
+    """
+    require_same_user(body.etudiant_id, current)
+    db = get_db()
+
+    # — 1. Profil étudiant
+    row = db.execute(
+        "SELECT niveau, objectifs, nom FROM etudiants WHERE id = ?",
+        (body.etudiant_id,)
+    ).fetchone()
+    niveau   = body.level or (row["niveau"] if row else "intermédiaire")
+    objectifs = row["objectifs"] if row else ""
+    nom      = row["nom"] if row else "l'étudiant"
+
+    # — 2. Tavily : vraies ressources sur le sujet
+    tavily_key = os.getenv("TAVILY_API_KEY", "")
+    ressources_tavily = []
+    if tavily_key:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.tavily.com/search",
+                    json={
+                        "api_key":      tavily_key,
+                        "query":        f"{body.subject} cours tutoriel {niveau} français",
+                        "search_depth": "basic",
+                        "max_results":  6,
+                        "include_domains": [
+                            "youtube.com", "medium.com", "towardsdatascience.com",
+                            "openclassrooms.com", "coursera.org", "kaggle.com",
+                            "geeksforgeeks.org", "freecodecamp.org", "github.com",
+                            "developer.mozilla.org", "docs.python.org", "huggingface.co"
+                        ],
+                    },
+                )
+                resp.raise_for_status()
+                for r in resp.json().get("results", []):
+                    url = r.get("url", "")
+                    if "youtube.com" in url:
+                        rtype = "video"
+                    elif any(d in url for d in ["docs.", "developer.", "huggingface."]):
+                        rtype = "documentation"
+                    elif any(d in url for d in ["medium.com", "towardsdatascience.com",
+                                                 "freecodecamp.org", "geeksforgeeks.org",
+                                                 "openclassrooms.com"]):
+                        rtype = "article"
+                    else:
+                        rtype = "web"
+                    ressources_tavily.append({
+                        "titre": r.get("title", ""),
+                        "url":   url,
+                        "type":  rtype,
+                        "desc":  r.get("content", "")[:150],
+                    })
+        except Exception:
+            pass
+
+    # — 3. GPT génère le parcours avec ces vraies ressources
+    ressources_context = "\n".join([
+        f"- [{r['type']}] {r['titre']} → {r['url']}"
+        for r in ressources_tavily
+    ]) or "Aucune ressource trouvée — génère des modules avec des URLs YouTube pertinentes."
+
+    system_prompt = """Tu es un expert en pédagogie et en ingénierie de formation.
+Tu génères des parcours d'apprentissage personnalisés en JSON pur, sans markdown ni backticks.
+Le JSON doit respecter EXACTEMENT ce schéma :
+{
+  "modules": [
+    {
+      "id": "1",
+      "ordre": 1,
+      "titre": "Titre du module",
+      "description": "Description pédagogique de 1-2 phrases.",
+      "type": "video",
+      "url": "https://...",
+      "duree": "20 min",
+      "difficulte": "Facile",
+      "completed": false
+    }
+  ]
+}
+Règles :
+- Entre 5 et 6 modules, ordonnés du plus simple au plus avancé
+- "type" : "video" | "article" | "exercice" | "documentation"
+- "url" : URL RÉELLE depuis les ressources fournies — jamais "#"
+- "difficulte" : "Facile" | "Moyen" | "Avancé"
+- Tout en français
+- JSON pur uniquement, aucun texte autour"""
+
+    user_prompt = f"""Génère un parcours d'apprentissage sur : **{body.subject}**
+Niveau de l'étudiant : **{niveau}**
+Objectifs : {objectifs or "Maîtriser les fondamentaux et progresser vers la pratique"}
+
+Voici les vraies ressources disponibles — utilise leurs URLs dans les modules :
+{ressources_context}
+
+Crée 5-6 modules progressifs qui couvrent : introduction → concepts clés → pratique → projet."""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user",   "content": user_prompt},
+    ]
+
+    raw = await call_gpt(messages, temperature=0.7, max_tokens=2000)
+
+    # Nettoyage défensif
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip().rstrip("```").strip()
+
+    try:
+        contenu = json.loads(raw)
+    except json.JSONDecodeError:
+        # Fallback : générer des modules avec URLs YouTube si GPT échoue
+        contenu = {"modules": [
+            {"id": str(i), "ordre": i, "titre": f"{t} {body.subject}",
+             "description": d, "type": tp,
+             "url": f"https://www.youtube.com/results?search_query={body.subject.replace(' ', '+')}+{t.replace(' ', '+')}",
+             "duree": dur, "difficulte": diff, "completed": False}
+            for i, (t, d, tp, dur, diff) in enumerate([
+                ("Introduction à", "Découvrez les fondamentaux.", "video", "20 min", "Facile"),
+                ("Concepts clés de", "Les notions théoriques essentielles.", "article", "15 min", "Facile"),
+                ("Pratique :", "Exercices guidés pas à pas.", "exercice", "30 min", "Moyen"),
+                ("Approfondissement :", "Techniques avancées.", "video", "25 min", "Moyen"),
+                ("Projet :", "Appliquez tout ce que vous avez appris.", "exercice", "45 min", "Avancé"),
+            ], 1)
+        ]}
+
+    # Validation et correction des URLs vides
+    for i, m in enumerate(contenu.get("modules", []), 1):
+        m["id"] = str(i)
+        m["ordre"] = i
+        m["completed"] = False
+        if not m.get("url") or m["url"] == "#":
+            query = f"{m.get('titre', body.subject)} {body.subject}"
+            if m.get("type") == "video":
+                m["url"] = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+            else:
+                m["url"] = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+
+    # — 4. Sauvegarde en DB
+    titre = f"Parcours {body.subject} — niveau {niveau}"
+    cur = db.execute(
+        """INSERT INTO learning_paths (etudiant_id, titre, contenu, duree_estimee_h, date_creation)
+           VALUES (?, ?, ?, ?, ?)""",
+        (
+            body.etudiant_id,
+            titre,
+            json.dumps(contenu, ensure_ascii=False),
+            round(len(contenu.get("modules", [])) * 0.5, 1),
+            datetime.utcnow().isoformat(),
+        ),
+    )
+    db.commit()
+
+    return {
+        "id":      cur.lastrowid,
+        "titre":   titre,
+        "contenu": contenu,
+        "message": f"✅ Parcours '{body.subject}' généré avec {len(contenu.get('modules', []))} modules",
+    }
+
+
+# ─────────────────────────────────────────────
+# COMPLÉTER UN MODULE — PATCH /api/learning-path/module/{module_id}/complete
+# ─────────────────────────────────────────────
+@app.patch("/api/learning-path/module/{path_id}/complete", tags=["Learning Path"],
+           summary="Marque un module comme complété/non-complété dans le parcours")
+def complete_module(path_id: int, module_id: str, body: ModuleCompleteRequest, current=Depends(get_current_user)):
+    """
+    Met à jour le statut 'completed' d'un module dans le JSON du parcours.
+    path_id   = ID du learning_path en DB
+    module_id = ID du module dans le JSON (query param)
+    """
+    require_same_user(body.etudiant_id, current)
+    db = get_db()
+
+    row = db.execute(
+        "SELECT contenu, etudiant_id FROM learning_paths WHERE id = ?", (path_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Parcours introuvable")
+    if row["etudiant_id"] != body.etudiant_id:
+        raise HTTPException(status_code=403, detail="Accès interdit")
+
+    contenu = json.loads(row["contenu"]) if isinstance(row["contenu"], str) else row["contenu"]
+
+    # Trouver et mettre à jour le module
+    module_found = False
+    for m in contenu.get("modules", []):
+        if str(m.get("id")) == str(module_id):
+            m["completed"] = body.completed
+            module_found = True
+            break
+
+    if not module_found:
+        raise HTTPException(status_code=404, detail=f"Module '{module_id}' introuvable dans ce parcours")
+
+    db.execute(
+        "UPDATE learning_paths SET contenu = ? WHERE id = ?",
+        (json.dumps(contenu, ensure_ascii=False), path_id)
+    )
+    db.commit()
+
+    nb_completes = sum(1 for m in contenu.get("modules", []) if m.get("completed"))
+    nb_total     = len(contenu.get("modules", []))
+
+    return {
+        "message":       f"Module {'complété' if body.completed else 'remis en cours'}",
+        "module_id":     module_id,
+        "completed":     body.completed,
+        "progression":   f"{nb_completes}/{nb_total} modules complétés",
+    }
+
 
 # ─────────────────────────────────────────────
 # HEALTH CHECK

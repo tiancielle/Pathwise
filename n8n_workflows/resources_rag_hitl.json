@@ -11,8 +11,8 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -48,
-        -64
+        -224,
+        -80
       ],
       "id": "9f9da6ba-15a0-44c8-84d3-5e57e4222c63",
       "name": "Webhook",
@@ -20,18 +20,27 @@
     },
     {
       "parameters": {
-        "method": "POST",
         "url": "http://host.docker.internal:8000/api/ressources",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"module\": \"={{ $json.body.module }}\",\n  \"niveau\": \"={{ $json.body.niveau }}\"\n}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.body.query }}"
+            },
+            {
+              "name": "n",
+              "value": "5"
+            }
+          ]
+        },
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        128,
-        112
+        -48,
+        96
       ],
       "id": "29e3f066-14c1-4689-aea3-237a32452207",
       "name": "HTTP Request"
@@ -59,8 +68,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        320,
-        -64
+        144,
+        -80
       ],
       "id": "abaebe82-8c16-468c-b868-c1f191740bf2",
       "name": "Edit Fields"
@@ -77,8 +86,8 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        496,
-        112
+        320,
+        96
       ],
       "id": "4a600c71-1b0b-4dfe-ba0e-4eae0c4bbbc0",
       "name": "Send an Email",
@@ -99,8 +108,8 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        672,
-        -64
+        496,
+        -80
       ],
       "id": "d2bdc3cf-ef40-4a56-b607-9f5a05211d45",
       "name": "Wait",
@@ -111,6 +120,70 @@
           "name": "Header Auth account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b75c3b5a-ce53-4cb8-ba03-46e4db9b0d5e",
+              "leftValue": "={{ $json.query.status }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        640,
+        32
+      ],
+      "id": "ded6471c-dc8e-448e-86b1-0efee1b06743",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"approved\",\n  \"ressources\": \"={{ $('Edit Fields').item.json.ressources }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        848,
+        -64
+      ],
+      "id": "28462422-10bc-47bb-be7a-c94b946d8173",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"rejected\",\n  \"message\": \"Ressources non validées par l'enseignante.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        848,
+        128
+      ],
+      "id": "4599033e-e281-463a-bc47-bd32edf976ed",
+      "name": "Respond to Webhook1"
     }
   ],
   "pinData": {},
@@ -158,6 +231,35 @@
           }
         ]
       ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -165,7 +267,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "0f3f90e8-5e1f-4a31-9d78-71792ff7ee31",
+  "versionId": "c86d5999-6e17-47ab-aa1c-2ff48febe8b9",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"

@@ -55,12 +55,20 @@ export interface QuizResult {
 }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
+export interface ExternalResource {
+  title: string
+  url: string
+  description: string
+  type: 'video' | 'article' | 'documentation' | 'web'
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
   sources?: string[]
+  external_resources?: ExternalResource[]
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

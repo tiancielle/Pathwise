@@ -19,10 +19,9 @@ export function useQuiz() {
         localStorage.getItem('pw_subject') || 'machine_learning'
       const level = localStorage.getItem('pw_level') || 'debutant'
 
-      // Si quiz par module, utilise le nom du module comme sujet
       if (moduleName) setCurrentModule(moduleName)
 
-      const questions = await fetchQuestions(subject, level)
+      const questions = await fetchQuestions(subject, level, state.user?.id)
       dispatch({ type: 'SET_QUIZ_QUESTIONS', payload: questions })
       setCurrentIndex(0)
       setAnswers([])
@@ -30,7 +29,7 @@ export function useQuiz() {
     } finally {
       setIsLoading(false)
     }
-  }, [dispatch])
+  }, [dispatch, state.user?.id])
 
   const answerQuestion = useCallback((
     questionId: string,
@@ -52,7 +51,6 @@ export function useQuiz() {
       })
       dispatch({ type: 'SET_QUIZ_RESULT', payload: result })
 
-      // ── Level up automatique ─────────────────────────────────────────────
       const newNiveau =
         result.percentage >= 75 ? 'avance' :
         result.percentage >= 45 ? 'intermediaire' :
@@ -61,7 +59,6 @@ export function useQuiz() {
       const currentNiveau = state.user.niveau
       const niveauOrder = { debutant: 0, intermediaire: 1, avance: 2 }
 
-      // Monte le niveau uniquement (jamais redescend)
       if (niveauOrder[newNiveau as keyof typeof niveauOrder] >
           niveauOrder[currentNiveau as keyof typeof niveauOrder]) {
         try {
@@ -74,7 +71,7 @@ export function useQuiz() {
           localStorage.setItem('pw_user', JSON.stringify(updatedUser))
           localStorage.setItem('pw_level', newNiveau)
         } catch {
-          console.warn('Level up non sauvegardé')
+          console.warn('Level up non sauvegarde')
         }
       }
 

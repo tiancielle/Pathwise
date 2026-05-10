@@ -23,11 +23,42 @@ export interface QuizResult {
   newLevel?: string
 }
 
-export async function fetchQuestions(subject: string, level: string): Promise<QuizQuestion[]> {
+// Helper pour adapter la réponse API vers le format QuizQuestion[]
+function _adaptQuestions(data: any): QuizQuestion[] {
+  if (Array.isArray(data)) return data
+  
+  if (data?.questions && Array.isArray(data.questions)) return data.questions
+  
+  if (data?.id && data?.question) return [data]
+  
+  return []
+}
+
+// Helper pour générer les recommandations selon le score
+function _buildRecommendations(percentage: number): string[] {
+  if (percentage >= 75) {
+    return ['Excellent ! Cap sur les sujets avances.']
+  } else if (percentage >= 45) {
+    return ['Bon niveau ! Consolidez vos bases.']
+  } else {
+    return ['Continuez sur les fondamentaux.']
+  }
+}
+
+export async function fetchQuestions(
+  subject: string, 
+  level: string, 
+  profileId?: number
+): Promise<QuizQuestion[]> {
   try {
-    const { data } = await api.get('/quiz/questions', { params: { subject, level } })
-    return data.questions || data
-  } catch {
+    const { data } = await api.post('/quiz/questions', {
+      subject,
+      level,
+      profile_id: profileId || 0,
+    })
+    return _adaptQuestions(data.questions || data)
+  } catch (error) {
+    console.warn('Fetch questions failed, using fallback:', error)
     return getFallbackQuestions(level)
   }
 }
@@ -39,62 +70,39 @@ export async function submitQuiz(payload: {
 }): Promise<QuizResult> {
   const { etudiant_id, answers, questions } = payload
 
-  const correct = answers.filter(a => {
+  const correctCount = answers.filter(a => {
     const q = questions.find(q => q.id === a.questionId)
     return q && a.selectedOption === q.correctAnswer
   }).length
 
-  const score = correct
-  const total = questions.length
-  const percentage = Math.round((score / total) * 100)
+  const total = questions.length || answers.length
+  const percentage = total > 0 ? Math.round((correctCount / total) * 100) : 0
 
-  // 🎯 Calcul du nouveau niveau
-  const currentLevel = localStorage.getItem('pw_level') || 'debutant'
-  const newLevel =
-    percentage >= 75 ? 'avance' :
-    percentage >= 45 ? 'intermediaire' :
-    'debutant'
-  
-  const levelUp = newLevel !== currentLevel &&
-    (newLevel === 'avance' || (newLevel === 'intermediaire' && currentLevel === 'debutant'))
-
-  // 💾 Persistance backend du résultat
   try {
     await api.post('/quiz/result', {
       etudiant_id,
-      module_id: localStorage.getItem('pw_subject') || 'machine_learning',
-      score: percentage,
-      reponses: answers,
-      duree: answers.reduce((s, a) => s + a.timeSpent, 0),
+      module_nom: localStorage.getItem('pw_subject') || 'machine_learning',
+      score: percentage / 100,
+      nb_questions: total,
+      nb_correctes: correctCount,
+      session_id: null,
+      details: {
+        answers: answers.map(a => ({
+          question_id: a.questionId,
+          selected: a.selectedOption,
+          time_spent: a.timeSpent,
+        }))
+      },
     })
   } catch {
     console.warn('Quiz result not saved')
   }
 
-  // 🚀 Mise à jour du niveau si level up
-  if (levelUp) {
-    localStorage.setItem('pw_level', newLevel)
-    try {
-      const userId = localStorage.getItem('pw_user_id')
-      if (userId) {
-        await api.patch(`/profil/${userId}`, { niveau: newLevel })
-      }
-    } catch {
-      console.warn('Level update failed')
-    }
-  }
-
   return {
-    score,
+    score: correctCount,
     total,
     percentage,
-    recommendations: percentage >= 75
-      ? ['🎉 Excellent ! Cap sur les sujets avancés.']
-      : percentage >= 45
-      ? ['💪 Bon niveau ! Consolidez vos bases.']
-      : ['📚 Continuez sur les fondamentaux.'],
-    levelUp,
-    newLevel: levelUp ? newLevel : undefined,
+    recommendations: _buildRecommendations(percentage),
   }
 }
 
@@ -111,62 +119,62 @@ function getFallbackQuestions(level: string): QuizQuestion[] {
     {
       id: 'q1',
       question: advanced
-        ? "Quelle est la différence entre BERT et GPT en termes d'architecture ?"
+        ? "Quelle est la difference entre BERT et GPT en termes d'architecture ?"
         : intermediate
-        ? "Qu'est-ce que le mécanisme d'attention dans les Transformers ?"
+        ? "Qu'est-ce que le mecanisme d'attention dans les Transformers ?"
         : "Qu'est-ce que l'overfitting en Machine Learning ?",
       options: advanced ? [
-        'BERT est auto-régressif, GPT est bidirectionnel',
-        'BERT est bidirectionnel, GPT est auto-régressif',
+        'BERT est auto-regressif, GPT est bidirectionnel',
+        'BERT est bidirectionnel, GPT est auto-regressif',
         'Les deux sont identiques',
         'BERT utilise RNN, GPT utilise CNN',
       ] : intermediate ? [
-        'Un mécanisme de mémoire externe',
-        'Un mécanisme qui pondère l\'importance de chaque token',
+        'Un mecanisme de memoire externe',
+        'Un mecanisme qui pondere l\'importance de chaque token',
         'Une fonction d\'activation',
         'Un type de normalisation',
       ] : [
-        'Le modèle est trop simple',
-        'Le modèle mémorise les données d\'entraînement',
-        'Le modèle s\'entraîne trop lentement',
-        'Manque de données',
+        'Le modele est trop simple',
+        'Le modele memorise les donnees d\'entrainement',
+        'Le modele s\'entraine trop lentement',
+        'Manque de donnees',
       ],
       correctAnswer: 1,
       explanation: advanced
-        ? 'BERT utilise un encodeur bidirectionnel, GPT un décodeur auto-régressif.'
+        ? 'BERT utilise un encodeur bidirectionnel, GPT un decodeur auto-regressif.'
         : intermediate
-        ? "L'attention permet au modèle de se concentrer sur les tokens pertinents."
-        : "L'overfitting = le modèle mémorise au lieu de généraliser.",
+        ? "L'attention permet au modele de se concentrer sur les tokens pertinents."
+        : "L'overfitting = le modele memorise au lieu de generaliser.",
     },
     {
       id: 'q2',
       question: advanced
         ? "Qu'est-ce que le fine-tuning par rapport au pre-training ?"
         : intermediate
-        ? "Quelle est la différence entre RNN et Transformer ?"
-        : "Quelle technique évite l'overfitting ?",
+        ? "Quelle est la difference entre RNN et Transformer ?"
+        : "Quelle technique evite l'overfitting ?",
       options: advanced ? [
         'Ce sont des synonymes',
-        'Le fine-tuning adapte un modèle pré-entraîné à une tâche spécifique',
+        'Le fine-tuning adapte un modele pre-entraine a une tache specifique',
         'Le pre-training est plus rapide',
-        'Le fine-tuning utilise plus de données',
+        'Le fine-tuning utilise plus de donnees',
       ] : intermediate ? [
-        'RNN traite en parallèle, Transformer en séquentiel',
-        'Transformer traite en parallèle, RNN en séquentiel',
+        'RNN traite en parallele, Transformer en sequentiel',
+        'Transformer traite en parallele, RNN en sequentiel',
         'Ils sont identiques',
-        'RNN est plus récent',
+        'RNN est plus recent',
       ] : [
-        'Plus de données',
-        'Régularisation L1/L2',
-        'Learning rate plus élevé',
+        'Plus de donnees',
+        'Regularisation L1/L2',
+        'Learning rate plus eleve',
         'Moins d\'epochs',
       ],
       correctAnswer: 1,
       explanation: advanced
-        ? 'Le fine-tuning spécialise un modèle général sur une tâche précise avec peu de données.'
+        ? 'Le fine-tuning specialise un modele general sur une tache precise avec peu de donnees.'
         : intermediate
-        ? 'Le Transformer traite tous les tokens en parallèle grâce à l\'attention.'
-        : 'La régularisation pénalise les poids trop grands.',
+        ? 'Le Transformer traite tous les tokens en parallele grace a l\'attention.'
+        : 'La regularisation penalise les poids trop grands.',
     },
     {
       id: 'q3',
@@ -177,14 +185,14 @@ function getFallbackQuestions(level: string): QuizQuestion[] {
         : "Que fait la fonction ReLU ?",
       options: advanced ? [
         'Un type de GAN',
-        'Une technique qui combine recherche de documents et génération de texte',
+        'Une technique qui combine recherche de documents et generation de texte',
         'Un algorithme d\'optimisation',
         'Un type de tokenization',
       ] : intermediate ? [
-        'Un fichier encodé',
-        'Une représentation numérique dense d\'un mot',
-        'Un modèle de traduction',
-        'Un réseau récurrent',
+        'Un fichier encode',
+        'Une representation numerique dense d\'un mot',
+        'Un modele de traduction',
+        'Un reseau recurrent',
       ] : [
         'Normalise les poids',
         'max(0, x)',
@@ -193,9 +201,9 @@ function getFallbackQuestions(level: string): QuizQuestion[] {
       ],
       correctAnswer: 1,
       explanation: advanced
-        ? 'RAG récupère des documents pertinents et les injecte dans le contexte du LLM.'
+        ? 'RAG recupere des documents pertinents et les injecte dans le contexte du LLM.'
         : intermediate
-        ? 'Les embeddings capturent le sens sémantique des mots en espace vectoriel.'
+        ? 'Les embeddings capturent le sens semantique des mots en espace vectoriel.'
         : 'ReLU = max(0, x), simple et efficace contre le vanishing gradient.',
     },
     {
@@ -204,7 +212,7 @@ function getFallbackQuestions(level: string): QuizQuestion[] {
         ? "Qu'est-ce que le RLHF ?"
         : intermediate
         ? "Qu'est-ce que la normalisation par batch (Batch Normalization) ?"
-        : "Différence entre supervisé et non supervisé ?",
+        : "Difference entre supervise et non supervise ?",
       options: advanced ? [
         'Random Learning with Human Feedback',
         'Reinforcement Learning from Human Feedback',
@@ -216,17 +224,17 @@ function getFallbackQuestions(level: string): QuizQuestion[] {
         'Un type de dropout',
         'Une fonction de perte',
       ] : [
-        'Langage différent',
+        'Langage different',
         'Labels vs pas de labels',
-        'Vitesse différente',
-        'Aucune différence',
+        'Vitesse differente',
+        'Aucune difference',
       ],
       correctAnswer: 1,
       explanation: advanced
-        ? 'RLHF utilise les préférences humaines pour aligner les LLMs.'
+        ? 'RLHF utilise les preferences humaines pour aligner les LLMs.'
         : intermediate
-        ? 'BatchNorm stabilise l\'entraînement en normalisant les activations.'
-        : 'Supervisé = données étiquetées. Non supervisé = clustering sans labels.',
+        ? 'BatchNorm stabilise l\'entrainement en normalisant les activations.'
+        : 'Supervise = donnees etiquetees. Non supervise = clustering sans labels.',
     },
     {
       id: 'q5',
@@ -236,26 +244,26 @@ function getFallbackQuestions(level: string): QuizQuestion[] {
         ? "Qu'est-ce que le dropout en deep learning ?"
         : "Qu'est-ce qu'une fonction de perte (loss function) ?",
       options: advanced ? [
-        'Un type de chaîne de Markov',
-        'Une technique de prompting qui force le modèle à raisonner étape par étape',
+        'Un type de chaine de Markov',
+        'Une technique de prompting qui force le modele a raisonner etape par etape',
         'Un algorithme de recherche',
         'Un type d\'architecture',
       ] : intermediate ? [
-        'Une technique pour accélérer l\'entraînement',
-        'Une technique de régularisation qui désactive aléatoirement des neurones',
+        'Une technique pour accelerer l\'entrainement',
+        'Une technique de regularisation qui desactive aleatoirement des neurones',
         'Un type d\'activation',
-        'Une méthode d\'initialisation',
+        'Une methode d\'initialisation',
       ] : [
-        'Une fonction qui génère des données',
-        'Une mesure de l\'erreur entre prédiction et réalité',
+        'Une fonction qui genere des donnees',
+        'Une mesure de l\'erreur entre prediction et realite',
         'Un type de neurone',
-        'Une méthode d\'optimisation',
+        'Une methode d\'optimisation',
       ],
       correctAnswer: 1,
       explanation: advanced
-        ? 'Le Chain-of-Thought force le modèle à décomposer le raisonnement en étapes.'
+        ? 'Le Chain-of-Thought force le modele a decomposer le raisonnement en etapes.'
         : intermediate
-        ? 'Le dropout réduit l\'overfitting en désactivant des neurones aléatoirement.'
+        ? 'Le dropout reduit l\'overfitting en desactivant des neurones aleatoirement.'
         : 'La loss mesure l\'erreur — l\'objectif est de la minimiser.',
     },
   ]

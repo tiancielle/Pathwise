@@ -30,6 +30,13 @@ interface BackendDashboard {
     nb_sessions: number
     temps_total_h: number
   }
+  modules_completes: number
+  sessions_recentes: Array<{
+    id: number
+    module_titre: string
+    date: string
+    duree: number
+  }>
   dernier_parcours: {
     titre: string
     date_creation: string
@@ -122,9 +129,9 @@ export function DashboardPage() {
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <StatCard
-              label="Quiz complétés"
-              value={data?.quiz.nb_quiz ?? 0}
-              icon={<Zap className="w-5 h-5" />}
+              label="Modules complétés"
+              value={data?.modules_completes ?? 0}
+              icon={<BookOpen className="w-5 h-5" />}
               color="indigo"
               delay={0}
             />
@@ -204,7 +211,16 @@ export function DashboardPage() {
 
           {/* Bottom Grid */}
           <div className="grid lg:grid-cols-2 gap-6">
-            <RecentActivity sessions={[]} />
+            <RecentActivity
+              sessions={
+                data?.sessions_recentes?.map(s => ({
+                  id: s.id,
+                  module_titre: s.module_titre,
+                  date: s.date,
+                  duree: s.duree,
+                })) ?? []
+              }
+            />
 
             <motion.div
               initial={{ opacity: 0, y: 20 }}

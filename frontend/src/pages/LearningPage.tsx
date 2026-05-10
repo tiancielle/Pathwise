@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
   LayoutGrid, RotateCcw, Zap, Search,
-  Trophy, Clock, BookOpen, CheckCircle, Plus
+  Trophy, Clock, BookOpen, CheckCircle,
+  Plus, ChevronRight, X
 } from 'lucide-react'
 import { PageWrapper } from '../components/layout/PageWrapper'
 import { ModuleCard } from '../components/learning/ModuleCard'
@@ -12,7 +13,15 @@ import { Loader } from '../components/common/Loader'
 import { StatCard } from '../components/dashboard/StatCard'
 import { useLearning } from '../hooks/useLearning'
 import { useApp } from '../context/AppContext'
-import { getDashboard } from '../services/learningService'
+import {
+  getDashboard,
+  getAllParcours,
+  getModulesFromParcours,
+  generateLearningPath,
+  completeModule,
+} from '../services/learningService'
+import type { Parcours } from '../services/learningService'
+import type { Module } from '../types'
 
 interface DashboardStats {
   quiz: { nb_quiz: number; score_moyen: number }
@@ -27,37 +36,108 @@ const SUGGESTED_TOPICS = [
 
 export function LearningPage() {
   const navigate = useNavigate()
-  const { state } = useApp()
-  const {
-    modules, isLoading, completedCount,
-    totalModules, progress, loadPath, resetPath, toggleModule, generatePath,
-  } = useLearning()
+  const { state, dispatch } = useApp()
+  const { toggleModule } = useLearning()
 
+  const [allParcours, setAllParcours] = useState<Parcours[]>([])
+  const [activeParcours, setActiveParcours] = useState<Parcours | null>(null)
+  const [modules, setModules] = useState<Module[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [searchTopic, setSearchTopic] = useState('')
   const [showTopicSearch, setShowTopicSearch] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
   const [activeTab, setActiveTab] = useState<'modules' | 'history'>('modules')
 
   useEffect(() => {
-    loadPath()
-    if (state.user) {
-      getDashboard(state.user.id).then(setStats).catch(() => {})
+    const load = async () => {
+      if (!state.user) return
+      setIsLoading(true)
+      try {
+        const [parcours, dashData] = await Promise.all([
+          getAllParcours(state.user.id),
+          getDashboard(state.user.id),
+        ])
+        setStats(dashData)
+
+        if (parcours.length > 0) {
+          setAllParcours(parcours)
+          const latest = parcours[parcours.length - 1]
+          setActiveParcours(latest)
+          setModules(getModulesFromParcours(latest))
+          dispatch({ type: 'SET_MODULES', payload: getModulesFromParcours(latest) })
+        }
+      } catch {
+        await handleNewTopic('machine_learning', true)
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }, [])
+    load()
+  }, [state.user?.id])
+
+  const handleSelectParcours = (parcours: Parcours) => {
+    setActiveParcours(parcours)
+    const mods = getModulesFromParcours(parcours)
+    setModules(mods)
+    dispatch({ type: 'SET_MODULES', payload: mods })
+    setActiveTab('modules')
+    localStorage.setItem('pw_subject', parcours.subject.toLowerCase().replace(/\s+/g, '_'))
+  }
+
+  const handleNewTopic = async (topic: string, silent = false) => {
+    if (!topic.trim() || !state.user) return
+    if (!silent) {
+      setIsGenerating(true)
+      setShowTopicSearch(false)
+      setSearchTopic('')
+    }
+    const subject = topic.toLowerCase().replace(/\s+/g, '_')
+    localStorage.setItem('pw_subject', subject)
+
+    try {
+      const { parcours, modules: newMods } = await generateLearningPath({
+        etudiant_id: state.user.id,
+        subject,
+        level: state.user.niveau,
+      })
+
+      setAllParcours(prev => {
+        const exists = prev.find(p => p.id === parcours.id)
+        return exists ? prev : [...prev, parcours]
+      })
+      setActiveParcours(parcours)
+      setModules(newMods)
+      dispatch({ type: 'SET_MODULES', payload: newMods })
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: 'Erreur génération parcours' })
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const handleToggle = async (module: Module) => {
+    if (!state.user || !activeParcours) return
+    const updated = { ...module, completed: !module.completed }
+    
+    // Mise à jour locale immédiate
+    setModules(prev => prev.map(m => m.id === module.id ? updated : m))
+    dispatch({ type: 'UPDATE_MODULE', payload: updated })
+    
+    // Synchronisation backend
+    await completeModule(
+      activeParcours.id,
+      module.id,
+      state.user.id,
+      updated.completed
+    )
+  }
 
   const completedModules = modules.filter(m => m.completed)
   const pendingModules = modules.filter(m => !m.completed)
-
-  const handleNewTopic = async (topic: string) => {
-    if (!topic.trim() || !state.user) return
-    setIsGenerating(true)
-    setShowTopicSearch(false)
-    setSearchTopic('')
-    localStorage.setItem('pw_subject', topic.toLowerCase().replace(/\s+/g, '_'))
-    await generatePath()
-    setIsGenerating(false)
-  }
+  const progress = modules.length > 0
+    ? Math.round((completedModules.length / modules.length) * 100)
+    : 0
 
   return (
     <PageWrapper>
@@ -65,13 +145,10 @@ export function LearningPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">
-            Bon retour, {state.user?.nom?.split(' ')[0]} !
+            Mes parcours
           </h1>
-          <p className="text-slate-500 mt-1">
-            Sujet actuel :{' '}
-            <span className="font-semibold text-indigo-600 capitalize">
-              {localStorage.getItem('pw_subject')?.replace(/_/g, ' ') || 'Machine Learning'}
-            </span>
+          <p className="text-slate-500 mt-1 text-sm">
+            {allParcours.length} parcours · {modules.length} modules
           </p>
         </div>
         <motion.button
@@ -85,6 +162,33 @@ export function LearningPage() {
         </motion.button>
       </div>
 
+      {/* Barre navigation parcours */}
+      {allParcours.length > 0 && (
+        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+          {allParcours.map(parcours => (
+            <motion.button
+              key={parcours.id}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => handleSelectParcours(parcours)}
+              className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all border-2 ${
+                activeParcours?.id === parcours.id
+                  ? 'bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-200'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+              }`}
+            >
+              {parcours.subject}
+              {activeParcours?.id === parcours.id && (
+                <span className="ml-2 text-xs bg-white/20 px-1.5 py-0.5 rounded-full">
+                  {getModulesFromParcours(parcours).filter(m => m.completed).length}/
+                  {getModulesFromParcours(parcours).length}
+                </span>
+              )}
+            </motion.button>
+          ))}
+        </div>
+      )}
+
       {/* Nouveau sujet search */}
       <AnimatePresence>
         {showTopicSearch && (
@@ -94,9 +198,12 @@ export function LearningPage() {
             exit={{ opacity: 0, height: 0 }}
             className="mb-6 bg-white rounded-2xl border border-indigo-100 shadow-sm p-5"
           >
-            <h3 className="font-bold text-slate-800 mb-3">
-              🎯 Que voulez-vous apprendre ?
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-slate-800">🎯 Que voulez-vous apprendre ?</h3>
+              <button onClick={() => setShowTopicSearch(false)}>
+                <X className="w-4 h-4 text-slate-400 hover:text-slate-600" />
+              </button>
+            </div>
             <div className="flex gap-2 mb-4">
               <input
                 type="text"
@@ -105,15 +212,17 @@ export function LearningPage() {
                 onKeyDown={e => e.key === 'Enter' && handleNewTopic(searchTopic)}
                 placeholder="Ex: Deep Learning, React, SQL..."
                 className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none text-sm"
+                autoFocus
               />
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => handleNewTopic(searchTopic)}
                 disabled={!searchTopic.trim()}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white text-sm font-semibold disabled:opacity-50"
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
               >
                 <Search className="w-4 h-4" />
+                Générer
               </motion.button>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -135,7 +244,10 @@ export function LearningPage() {
 
       {isLoading || isGenerating ? (
         <div className="flex flex-col items-center justify-center min-h-[400px]">
-          <Loader text={isGenerating ? `Génération du parcours "${searchTopic || 'nouveau sujet'}"...` : "Chargement de votre parcours..."} size="lg" />
+          <Loader
+            text={isGenerating ? `Génération du parcours "${searchTopic || 'nouveau sujet'}"...` : 'Chargement de vos parcours...'}
+            size="lg"
+          />
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -153,7 +265,7 @@ export function LearningPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <StatCard
               label="Modules complétés"
-              value={completedCount}
+              value={`${completedModules.length}/${modules.length}`}
               icon={<CheckCircle className="w-5 h-5" />}
               color="emerald"
               delay={0}
@@ -183,13 +295,13 @@ export function LearningPage() {
 
           {/* Progress */}
           <ProgressBar
-            completed={completedCount}
-            total={totalModules}
+            completed={completedModules.length}
+            total={modules.length}
             percentage={progress}
             userName={state.user?.nom?.split(' ')[0]}
           />
 
-          {/* Tabs + Controls */}
+          {/* Tabs + Régénérer */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
               <button
@@ -201,7 +313,7 @@ export function LearningPage() {
                 }`}
               >
                 <LayoutGrid className="w-4 h-4" />
-                Modules ({pendingModules.length})
+                En cours ({pendingModules.length})
               </button>
               <button
                 onClick={() => setActiveTab('history')}
@@ -218,15 +330,15 @@ export function LearningPage() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={resetPath}
+              onClick={() => activeParcours && handleNewTopic(activeParcours.subject)}
               className="p-2.5 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
-              title="Régénérer le parcours"
+              title="Régénérer ce parcours"
             >
               <RotateCcw className="w-5 h-5" />
             </motion.button>
           </div>
 
-          {/* Modules Tab */}
+          {/* En cours */}
           {activeTab === 'modules' && (
             <AnimatePresence mode="wait">
               {pendingModules.length === 0 ? (
@@ -236,9 +348,7 @@ export function LearningPage() {
                   className="text-center py-16"
                 >
                   <div className="text-5xl mb-4">🎉</div>
-                  <p className="text-slate-700 font-bold text-lg mb-2">
-                    Parcours complété !
-                  </p>
+                  <p className="text-slate-700 font-bold text-lg mb-2">Parcours complété !</p>
                   <p className="text-slate-400 text-sm mb-6">
                     Félicitations ! Choisissez un nouveau sujet pour continuer.
                   </p>
@@ -249,7 +359,7 @@ export function LearningPage() {
                     className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-200"
                   >
                     <Plus className="w-5 h-5" />
-                    Choisir un nouveau sujet
+                    Nouveau sujet
                   </motion.button>
                 </motion.div>
               ) : (
@@ -259,8 +369,8 @@ export function LearningPage() {
                       key={module.id}
                       module={module}
                       index={i}
-                      onToggle={toggleModule}
-                      onClick={(m) => { if (m.url && m.url !== '#') window.open(m.url, '_blank') }}
+                      onToggle={handleToggle}
+                      onClick={() => {}}
                     />
                   ))}
                 </div>
@@ -268,7 +378,7 @@ export function LearningPage() {
             </AnimatePresence>
           )}
 
-          {/* History Tab */}
+          {/* Complétés */}
           {activeTab === 'history' && (
             <AnimatePresence mode="wait">
               {completedModules.length === 0 ? (
@@ -278,11 +388,9 @@ export function LearningPage() {
                   className="text-center py-16"
                 >
                   <BookOpen className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm">
-                    Aucun module complété pour le moment
-                  </p>
+                  <p className="text-slate-400 text-sm">Aucun module complété pour le moment</p>
                   <p className="text-slate-300 text-xs mt-1">
-                    Cochez un module comme complété pour le voir ici
+                    Cochez ✅ un module pour le marquer comme complété
                   </p>
                 </motion.div>
               ) : (
@@ -292,8 +400,8 @@ export function LearningPage() {
                       key={module.id}
                       module={module}
                       index={i}
-                      onToggle={toggleModule}
-                      onClick={(m) => { if (m.url && m.url !== '#') window.open(m.url, '_blank') }}
+                      onToggle={handleToggle}
+                      onClick={() => {}}
                     />
                   ))}
                 </div>
@@ -310,11 +418,12 @@ export function LearningPage() {
           >
             <Zap className="w-10 h-10 text-indigo-500 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-slate-800 mb-2">
-              Évaluer votre niveau global
+              Évaluer votre niveau sur{' '}
+              <span className="text-indigo-600">{activeParcours?.subject}</span>
             </h3>
             <p className="text-slate-500 mb-6 max-w-md mx-auto text-sm">
-              Passez le quiz général pour affiner votre parcours
-              et débloquer des ressources encore plus adaptées.
+              Passez le quiz pour valider vos connaissances et débloquer
+              des ressources encore plus adaptées.
             </p>
             <motion.button
               whileHover={{ scale: 1.03 }}
