@@ -1,10 +1,56 @@
 [project]
 name = "pathwise"
 version = "0.1.0"
-description = "Add your description here"
+description = "Système multi-agent de personnalisation de parcours d'apprentissage — EMSI 2026"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    { name = "Nasri Hiba" },
+    { name = "Sabir Malak" },
+]
+
 dependencies = [
-    "openai>=2.32.0",
-    "python-dotenv>=1.2.2",
+    # ── API ──────────────────────────────────────────
+    "fastapi==0.136.1",
+    "uvicorn==0.46.0",
+    "starlette==1.0.0",
+    "python-multipart==0.0.27",
+    "httpx==0.28.1",
+
+    # ── Auth ─────────────────────────────────────────
+    "bcrypt==5.0.0",
+    "PyJWT==2.12.1",
+    "python-jose==3.5.0",
+    "cryptography==46.0.5",
+
+    # ── Data ─────────────────────────────────────────
+    "pydantic==2.12.5",
+    "pydantic-settings==2.14.0",
+    "python-dotenv==1.2.2",
+
+    # ── RAG / Vector DB ──────────────────────────────
+    "chromadb==1.5.8",
+    "sentence-transformers==5.4.1",
+    "numpy==2.3.4",
+    "pymupdf==1.27.2.3",
+    "pdfplumber==0.11.9",
+    "pdfminer.six==20251230",
+    "pypdfium2==5.8.0",
+    "tokenizers==0.22.2",
+    "transformers==5.5.4",
+    "torch==2.11.0",
+
+    # ── Search ───────────────────────────────────────
+    "tavily-python==0.7.24",
+
+    # ── ML / NLP (optionnel) ─────────────────────────
+    "scikit-learn==1.7.2",
+    "pandas==2.3.3",
+
+    # ── Utils ────────────────────────────────────────
+    "tqdm==4.67.3",
+    "rich==14.3.3",
+    "httptools==0.7.1",
+    "watchfiles==1.1.1",
+    "anyio==4.11.0",
 ]

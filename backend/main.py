@@ -17,6 +17,7 @@ import httpx
 import shutil
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import asyncio
 
 from database import get_db, init_db
 from rag_pipeline import search_resources, index_all_pdfs
@@ -548,28 +549,28 @@ Assure-toi que les 5 questions couvrent ces catégories dans cet ordre :
 HITL_ENABLED     = os.getenv("HITL_ENABLED", "false").lower() == "true"
 N8N_HITL_WEBHOOK = os.getenv("N8N_HITL_WEBHOOK", "")
 
-@app.get("/api/ressources", tags=["Ressources"],
-         summary="Recherche RAG dans ChromaDB — avec HITL si activé")
+@app.get("/api/ressources", tags=["Ressources"])
 async def get_ressources(query: str = "machine learning", n: int = 5):
-    # Relire à chaque requête pour prendre en compte les changements .env
     hitl_enabled = os.getenv("HITL_ENABLED", "false").lower() == "true"
     n8n_webhook  = os.getenv("N8N_HITL_WEBHOOK", "")
-
     if hitl_enabled and n8n_webhook:
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
+                # r = await client.post(n8n_webhook, json={"query": query, "n": n})
+                # return r.json()
                 r = await client.post(n8n_webhook, json={
                     "query": query,
+                    "module": query,      # ← ajouter
+                    "niveau": "débutant", # ← ajouter
                     "n": n
                 })
-                return r.json()
         except Exception:
             results = search_resources(query, n_results=n)
             return {"query": query, "results": results}
     else:
         results = search_resources(query, n_results=n)
         return {"query": query, "results": results}
-
+    
 
 @app.get("/api/ressources/direct", tags=["Ressources"],
          summary="Route interne pour n8n — RAG direct sans HITL")

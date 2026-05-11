@@ -5,22 +5,22 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "pathwise-resources",
-        "responseMode": "lastNode",
+        "responseMode": "responseNode",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -224,
-        -80
+        656,
+        176
       ],
-      "id": "9f9da6ba-15a0-44c8-84d3-5e57e4222c63",
+      "id": "88d6c165-e2b8-4b33-bf65-27a9c26c2664",
       "name": "Webhook",
       "webhookId": "974deb3f-624b-41ed-ac28-062b6d8034a6"
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:8000/api/ressources",
+        "url": "http://host.docker.internal:8000/api/ressources/direct",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -39,10 +39,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -48,
-        96
+        864,
+        176
       ],
-      "id": "29e3f066-14c1-4689-aea3-237a32452207",
+      "id": "70325e6f-1f19-4e74-b287-965a2c5615ea",
       "name": "HTTP Request"
     },
     {
@@ -50,15 +50,15 @@
         "assignments": {
           "assignments": [
             {
-              "id": "94984399-54f6-46f0-b06e-6960bcdce622",
-              "name": "ressources",
-              "value": "={{ $json.ressources }}",
+              "id": "assign-1",
+              "name": "ressources_trouvees",
+              "value": "={{ JSON.stringify($json.results) }}",
               "type": "string"
             },
             {
-              "id": "f1cdf720-6661-4591-a08e-f72b3696c60b",
-              "name": "source",
-              "value": "={{ $json.source }}",
+              "id": "assign-2",
+              "name": "query",
+              "value": "={{ $json.body.query || $json.body.module }}",
               "type": "string"
             }
           ]
@@ -68,30 +68,30 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        144,
-        -80
+        1056,
+        176
       ],
-      "id": "abaebe82-8c16-468c-b868-c1f191740bf2",
+      "id": "bf18c23e-37f8-451b-b828-bfada7246846",
       "name": "Edit Fields"
     },
     {
       "parameters": {
         "fromEmail": "nasrihiba70@gmail.com",
         "toEmail": "nasrihiba20@gmail.com",
-        "subject": "[PathWise HITL] Validation ressources - {{ $('Edit Fields').item.json.ressources_trouvees[0].title }}",
+        "subject": "[PathWise HITL] Validation ressources requise",
         "emailFormat": "text",
-        "text": "Bonjour,\n\nPathWise a trouvé des ressources pour le module python-bases.\n\nApprouver : http://localhost:5678/webhook/pathwise-approve?status=approved\nRejeter : http://localhost:5678/webhook/pathwise-approve?status=rejected\n\nMerci !",
+        "text": "=Bonjour,\n\nPathWise a trouve des ressources pour : {{ $json.query }}\n\nRessources :\n{{ $json.ressources_trouvees }}\n\n Approuver : {{ $execution.resumeUrl }}&status=approved\n Rejeter : {{ $execution.resumeUrl }}&status=rejected\n\nMerci !",
         "options": {}
       },
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        320,
-        96
+        1264,
+        176
       ],
-      "id": "4a600c71-1b0b-4dfe-ba0e-4eae0c4bbbc0",
+      "id": "16a179ef-4ed8-4063-bd9c-23fb7ae78fbf",
       "name": "Send an Email",
-      "webhookId": "d4d41edc-499d-493b-aa6f-01079069c04f",
+      "webhookId": "849f2bf1-f24c-455e-b430-690e811eae1d",
       "credentials": {
         "smtp": {
           "id": "eiZmeqoZaRQcr7Uv",
@@ -102,88 +102,32 @@
     {
       "parameters": {
         "resume": "webhook",
-        "incomingAuthentication": "headerAuth",
         "options": {}
       },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        496,
-        -80
+        1456,
+        176
       ],
-      "id": "d2bdc3cf-ef40-4a56-b607-9f5a05211d45",
+      "id": "d894f531-a314-40da-ac65-8b6b79f658f8",
       "name": "Wait",
-      "webhookId": "09fce862-c1e9-48cc-bc4b-a1cc684e90f3",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "zFCF9qIK3NpSA0qr",
-          "name": "Header Auth account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "b75c3b5a-ce53-4cb8-ba03-46e4db9b0d5e",
-              "leftValue": "={{ $json.query.status }}",
-              "rightValue": "approved",
-              "operator": {
-                "type": "string",
-                "operation": "equals",
-                "name": "filter.operator.equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        640,
-        32
-      ],
-      "id": "ded6471c-dc8e-448e-86b1-0efee1b06743",
-      "name": "If"
+      "webhookId": "09fce862-c1e9-48cc-bc4b-a1cc684e90f3"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "{\n  \"status\": \"approved\",\n  \"ressources\": \"={{ $('Edit Fields').item.json.ressources }}\"\n}",
+        "responseBody": "{\"status\": \"approved\", \"message\": \"Ressources validées\"}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        848,
-        -64
+        1664,
+        176
       ],
-      "id": "28462422-10bc-47bb-be7a-c94b946d8173",
+      "id": "6ffb2b4d-5fb0-48d2-8692-648eb30d96ca",
       "name": "Respond to Webhook"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "{\n  \"status\": \"rejected\",\n  \"message\": \"Ressources non validées par l'enseignante.\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        848,
-        128
-      ],
-      "id": "4599033e-e281-463a-bc47-bd32edf976ed",
-      "name": "Respond to Webhook1"
     }
   ],
   "pinData": {},
@@ -236,25 +180,7 @@
       "main": [
         [
           {
-            "node": "If",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "If": {
-      "main": [
-        [
-          {
             "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond to Webhook1",
             "type": "main",
             "index": 0
           }
@@ -265,13 +191,16 @@
   "active": true,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
-  "versionId": "c86d5999-6e17-47ab-aa1c-2ff48febe8b9",
+  "versionId": "75133aea-ab5e-4c8c-93bf-f4cf32a23e58",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"
   },
-  "id": "n4VruS2YMgUKK6Ym",
+  "id": "UMxUpz1XKQqsbXVi",
   "tags": []
 }
