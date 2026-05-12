@@ -399,9 +399,46 @@ def create_session(
 # ─────────────────────────────────────────────
 # QUIZ — /api/quiz
 # ─────────────────────────────────────────────
-@app.post("/api/quiz/result", status_code=201, tags=["Quiz"],
-          summary="Enregistre le résultat détaillé d'un quiz")
-def save_quiz_result(body: QuizResultCreate, current=Depends(get_current_user)):
+# @app.post("/api/quiz/result", status_code=201, tags=["Quiz"],
+#           summary="Enregistre le résultat détaillé d'un quiz")
+# def save_quiz_result(body: QuizResultCreate, current=Depends(get_current_user)):
+#     require_same_user(body.etudiant_id, current)
+#     db = get_db()
+#     cur = db.execute(
+#         """INSERT INTO quiz_results
+#            (etudiant_id, session_id, module_nom, score, nb_questions, nb_correctes, details, date_quiz)
+#            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+#         (
+#             body.etudiant_id,
+#             body.session_id,
+#             body.module_nom,
+#             body.score,
+#             body.nb_questions,
+#             body.nb_correctes,
+#             json.dumps(body.details or {}, ensure_ascii=False),
+#             datetime.utcnow().isoformat(),
+#         ),
+#     )
+#     db.commit()
+#     return {"id": cur.lastrowid, "message": "Résultat enregistré"}
+# ── Mettez cette fonction AVANT toutes les routes ──
+async def notify_n8n_background(webhook: str, etudiant_id: int, module: str, path_id: int):
+    """Notifie n8n en arrière-plan sans bloquer."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(webhook, json={
+                "etudiant_id": etudiant_id,
+                "module": module,
+                "path_id": path_id,
+                "reponses": []
+            })
+    except Exception:
+        pass
+
+
+# ── Route quiz/result — version corrigée ──
+@app.post("/api/quiz/result", status_code=201, tags=["Quiz"])
+async def save_quiz_result(body: QuizResultCreate, current=Depends(get_current_user)):
     require_same_user(body.etudiant_id, current)
     db = get_db()
     cur = db.execute(
@@ -420,8 +457,17 @@ def save_quiz_result(body: QuizResultCreate, current=Depends(get_current_user)):
         ),
     )
     db.commit()
-    return {"id": cur.lastrowid, "message": "Résultat enregistré"}
 
+    # Notifier n8n adapter en arrière-plan
+    n8n_base = os.getenv("N8N_BASE_URL", "http://localhost:5678")
+    asyncio.create_task(notify_n8n_background(
+        f"{n8n_base}/webhook-test/pathwise-adapter",
+        body.etudiant_id,
+        body.module_nom,
+        0
+    ))
+
+    return {"id": cur.lastrowid, "message": "Résultat enregistré"}
 
 @app.get("/api/quiz/score", tags=["Quiz"])
 def get_quiz_score(etudiant_id: int, current=Depends(get_current_user)):
@@ -1127,6 +1173,79 @@ def complete_module(path_id: int, module_id: str, body: ModuleCompleteRequest, c
         "progression":   f"{nb_completes}/{nb_total} modules complétés",
     }
 
+class AdaptRequest(BaseModel):
+    etudiant_id: int
+    module_nom: str
+    score: float        # 0.0 – 1.0
+    path_id: int
+
+@app.post("/api/learning-path/adapt", tags=["Learning Path"],
+          summary="Adapte le parcours selon le score du quiz")
+async def adapt_learning_path(body: AdaptRequest, current=Depends(get_current_user)):
+    require_same_user(body.etudiant_id, current)
+    db = get_db()
+
+    row = db.execute(
+        "SELECT contenu FROM learning_paths WHERE id = ? AND etudiant_id = ?",
+        (body.path_id, body.etudiant_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Parcours introuvable")
+
+    contenu = json.loads(row["contenu"]) if isinstance(row["contenu"], str) else row["contenu"]
+    modules = contenu.get("modules", [])
+    score_pct = body.score * 100
+
+    if score_pct < 60:
+        # Score insuffisant → ajouter module de révision
+        nouveau_module = {
+            "id": str(len(modules) + 1),
+            "ordre": len(modules) + 1,
+            "titre": f"Révision — {body.module_nom}",
+            "description": f"Module de révision car score insuffisant ({score_pct:.0f}%). Reprenez les bases.",
+            "type": "video",
+            "url": f"https://www.youtube.com/results?search_query={body.module_nom.replace(' ', '+')}+revision+debutant",
+            "duree": "20 min",
+            "difficulte": "Facile",
+            "completed": False,
+        }
+        modules.append(nouveau_module)
+        contenu["modules"] = modules
+        action = "revision_ajoutee"
+        message = f"Score insuffisant ({score_pct:.0f}%) — module de révision ajouté"
+    else:
+        # Score suffisant → marquer module comme complété
+        for m in modules:
+            if m.get("titre", "").lower() == body.module_nom.lower() or body.module_nom.lower() in m.get("titre", "").lower():
+                m["completed"] = True
+                break
+        contenu["modules"] = modules
+        action = "module_valide"
+        message = f"Module validé ({score_pct:.0f}%) ✅"
+
+    db.execute(
+        "UPDATE learning_paths SET contenu = ? WHERE id = ?",
+        (json.dumps(contenu, ensure_ascii=False), body.path_id)
+    )
+    db.commit()
+
+    return {
+        "action":   action,
+        "message":  message,
+        "score":    score_pct,
+        "modules":  len(modules),
+    }
+
+@app.get("/api/quiz/score/internal", tags=["Quiz"])
+def get_quiz_score_internal(etudiant_id: int):
+    """Route interne pour n8n — pas d'auth JWT requise."""
+    db = get_db()
+    row = db.execute(
+        "SELECT AVG(score) as score_moyen, COUNT(*) as nb_quiz FROM quiz_results WHERE etudiant_id = ?",
+        (etudiant_id,),
+    ).fetchone()
+    score = round((row["score_moyen"] or 0) * 100, 1)
+    return {"etudiant_id": etudiant_id, "score": score, "nb_quiz": row["nb_quiz"]}
 
 # ─────────────────────────────────────────────
 # HEALTH CHECK

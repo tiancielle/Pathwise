@@ -20,13 +20,7 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://host.docker.internal:8000/api/quiz/score",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ \"etudiant_id\": $json.body.etudiant_id, \"module\": $json.body.module, \"reponses\": $json.body.reponses }) }}",
+        "url": "={{\"http://host.docker.internal:8000/api/quiz/score/internal?etudiant_id=\" + $json.body.etudiant_id}}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -36,13 +30,7 @@
         0
       ],
       "id": "c31aa6a8-3be7-4310-9909-684dd98b8a63",
-      "name": "HTTP Request",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "zFCF9qIK3NpSA0qr",
-          "name": "Header Auth account"
-        }
-      }
+      "name": "HTTP Request"
     },
     {
       "parameters": {
@@ -165,6 +153,16 @@
           }
         ]
       ]
+    },
+    "Edit Fields1": {
+      "main": [
+        []
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        []
+      ]
     }
   },
   "active": true,
@@ -172,7 +170,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "1fa03846-246f-4bb7-a932-ff7b6eb19bef",
+  "versionId": "e19b5dee-c05e-45ce-8aa8-1af8eb62aa03",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"
