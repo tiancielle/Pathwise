@@ -1,32 +1,68 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Zap, Play, ArrowUp } from 'lucide-react'
 import { PageWrapper } from '../components/layout/PageWrapper'
 import { QuestionCard } from '../components/quiz/QuestionCard'
 import { ScoreCard } from '../components/quiz/ScoreCard'
+import { QuizFeedback } from '../components/quiz/QuizFeedback'
 import { Button } from '../components/common/Button'
 import { Loader } from '../components/common/Loader'
 import { useQuiz } from '../hooks/useQuiz'
 import { useApp } from '../context/AppContext'
+import { getQuizFeedback } from '../services/quizService'
+import type { QuizFeedback as QuizFeedbackType } from '../services/quizService'
+import type { AnswerInput } from '../services/quizService'
 
 export function QuizPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { state } = useApp()
 
-  // Reçoit moduleId et moduleName si vient d'un ModuleCard
   const moduleId = location.state?.moduleId
   const moduleName = location.state?.moduleName
 
+  // ✅ answers ajouté dans le destructuring
   const {
     questions, currentQuestion, currentIndex,
-    totalQuestions, result, isLoading, started, startQuiz, answerQuestion, finish, reset,
+    totalQuestions, result, isLoading, started,
+    answers,
+    startQuiz, answerQuestion, finish, reset,
   } = useQuiz()
 
+  const [feedback, setFeedback] = useState<QuizFeedbackType | null>(null)
+  const [loadingFeedback, setLoadingFeedback] = useState(false)
+  const answersRef = useRef<AnswerInput[]>([])
+
+  // ✅ Sync answersRef à chaque changement
+  useEffect(() => {
+    answersRef.current = answers
+  }, [answers])
+
+  // ✅ useEffect du finish mis à jour avec answersRef
   useEffect(() => {
     if (started && questions.length > 0 && currentIndex >= totalQuestions) {
-      finish()
+      const doFinish = async () => {
+        const savedAnswers = [...answersRef.current]
+        const quizResult = await finish()
+        if (quizResult && state.user) {
+          setLoadingFeedback(true)
+          try {
+            const fb = await getQuizFeedback({
+              etudiant_id: state.user.id,
+              module_nom: moduleName || localStorage.getItem('pw_subject') || 'machine_learning',
+              questions,
+              answers: savedAnswers,
+            })
+            setFeedback(fb)
+          } catch {
+            console.warn('Feedback non disponible')
+          } finally {
+            setLoadingFeedback(false)
+          }
+        }
+      }
+      doFinish()
     }
   }, [currentIndex, totalQuestions, started, questions.length])
 
@@ -35,7 +71,6 @@ export function QuizPage() {
     answerQuestion(currentQuestion.id, selectedOption, 30)
   }
 
-  // Détecte si level up
   const oldNiveau = localStorage.getItem('pw_level_before') || 'debutant'
   const newNiveau = state.user?.niveau || 'debutant'
   const leveledUp = result && oldNiveau !== newNiveau
@@ -54,7 +89,6 @@ export function QuizPage() {
           </p>
         </div>
 
-        {/* Start Screen */}
         {!started && !result && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -102,14 +136,12 @@ export function QuizPage() {
           </motion.div>
         )}
 
-        {/* Loading */}
         {isLoading && (
           <div className="flex items-center justify-center min-h-[400px]">
             <Loader text="Génération du quiz par IA..." size="lg" />
           </div>
         )}
 
-        {/* Quiz en cours */}
         {started && !isLoading && currentQuestion && !result && (
           <AnimatePresence mode="wait">
             <QuestionCard
@@ -122,10 +154,8 @@ export function QuizPage() {
           </AnimatePresence>
         )}
 
-        {/* Résultats */}
         {result && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            {/* Level Up Banner */}
             {leveledUp && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.8 }}
@@ -154,6 +184,20 @@ export function QuizPage() {
               onRetry={() => reset()}
               onContinue={() => navigate('/learning')}
             />
+
+            {loadingFeedback && (
+              <div className="flex items-center justify-center py-8 gap-3">
+                <Loader size="sm" />
+                <p className="text-sm text-slate-400">Analyse de vos réponses...</p>
+              </div>
+            )}
+
+            {feedback && !loadingFeedback && (
+              <QuizFeedback
+                historique={feedback.historique}
+                ressources={feedback.ressources_par_question}
+              />
+            )}
           </motion.div>
         )}
       </div>

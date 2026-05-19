@@ -11,8 +11,8 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        656,
-        176
+        576,
+        80
       ],
       "id": "88d6c165-e2b8-4b33-bf65-27a9c26c2664",
       "name": "Webhook",
@@ -26,7 +26,7 @@
           "parameters": [
             {
               "name": "query",
-              "value": "={{ $json.body.query }}"
+              "value": "=={{ $json.output }}\n"
             },
             {
               "name": "n",
@@ -39,8 +39,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        864,
-        176
+        1168,
+        256
       ],
       "id": "70325e6f-1f19-4e74-b287-965a2c5615ea",
       "name": "HTTP Request"
@@ -68,8 +68,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1056,
-        176
+        1360,
+        80
       ],
       "id": "bf18c23e-37f8-451b-b828-bfada7246846",
       "name": "Edit Fields"
@@ -86,8 +86,8 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        1264,
-        176
+        1584,
+        256
       ],
       "id": "16a179ef-4ed8-4063-bd9c-23fb7ae78fbf",
       "name": "Send an Email",
@@ -107,8 +107,8 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1456,
-        176
+        1792,
+        64
       ],
       "id": "d894f531-a314-40da-ac65-8b6b79f658f8",
       "name": "Wait",
@@ -123,11 +123,88 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        1664,
-        176
+        2032,
+        240
       ],
       "id": "6ffb2b4d-5fb0-48d2-8692-648eb30d96ca",
       "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Tu es PathWise, un assistant pédagogique. \nAnalyse la requête de l'étudiant et enrichis-la pour une meilleure recherche de ressources.\nRequête originale : {{ $('Webhook').item.json.body.query }}\nReformule cette requête en une recherche optimisée pour trouver les meilleures ressources pédagogiques.\nRetourne uniquement la requête enrichie, rien d'autre.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        784,
+        80
+      ],
+      "id": "c5f7732b-5c43-41b0-bf26-15afc585a294",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "id"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        656,
+        288
+      ],
+      "id": "c51de2fa-e974-4729-88a1-1d28696306d9",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "HyuKnWgFGjcGCQSe",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=={{ $('Webhook').item.json.body.query }}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        288
+      ],
+      "id": "b2fb13e8-349a-48ae-8d11-7c5950f587d2",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:8000/api/ressources/direct",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "=={{ $json.query }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.4,
+      "position": [
+        944,
+        288
+      ],
+      "id": "b389dba7-397b-4000-8f12-25e4e173e95c",
+      "name": "HTTP Request1"
     }
   ],
   "pinData": {},
@@ -136,7 +213,7 @@
       "main": [
         [
           {
-            "node": "HTTP Request",
+            "node": "AI Agent",
             "type": "main",
             "index": 0
           }
@@ -186,6 +263,50 @@
           }
         ]
       ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -196,7 +317,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
   },
-  "versionId": "75133aea-ab5e-4c8c-93bf-f4cf32a23e58",
+  "versionId": "a203711a-921b-4bef-8512-5011f2430914",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7807ea62cfb0c9e1a4c1b964be2dafaa8653f364436e099c72958649590394f5"

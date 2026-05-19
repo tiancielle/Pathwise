@@ -80,6 +80,22 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lp_etudiant         ON learning_paths(etudiant_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_quiz_etudiant       ON quiz_results(etudiant_id)")
 
+    # ── Traçabilité ressources consultées ─────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ressources_consultees (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            etudiant_id     INTEGER NOT NULL REFERENCES etudiants(id) ON DELETE CASCADE,
+            module_nom      TEXT    NOT NULL,
+            titre           TEXT    NOT NULL,
+            url             TEXT    NOT NULL,
+            type_ressource  TEXT    NOT NULL,   -- video | article | exercice | documentation | web
+            source          TEXT    DEFAULT 'externe',  -- externe | chromadb
+            date_consultation TEXT  NOT NULL
+        )
+    """)
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_trace_etudiant ON ressources_consultees(etudiant_id)")
+
     conn.commit()
     conn.close()
     print(" Base de données PathWise initialisée avec succès.")

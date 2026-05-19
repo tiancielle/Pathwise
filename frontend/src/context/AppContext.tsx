@@ -1,7 +1,7 @@
 import { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react'
 import { getStoredUser, getStoredToken } from '../services/authService'
 import type { AuthUser, Module, QuizQuestion, QuizResult, ChatMessage } from '../types'
-
+export type { QuizQuestion, QuizResult } from '../types'
 // ─── State ────────────────────────────────────────────────────────────────────
 interface AppState {
   // Auth

@@ -22,7 +22,7 @@ export function StepInfo({ data, onChange, errors }: StepInfoProps) {
     >
       <Input
         label="Nom complet"
-        placeholder="Hiba Nasri"
+        placeholder="Name .."
         value={data.nom}
         onChange={e => onChange('nom', e.target.value)}
         error={errors.nom}
@@ -31,7 +31,7 @@ export function StepInfo({ data, onChange, errors }: StepInfoProps) {
       <Input
         label="Email"
         type="email"
-        placeholder="hiba@example.com"
+        placeholder="name@example.com"
         value={data.email}
         onChange={e => onChange('email', e.target.value)}
         error={errors.email}

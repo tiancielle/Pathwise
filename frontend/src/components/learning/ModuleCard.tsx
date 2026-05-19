@@ -2,6 +2,8 @@ import { motion } from 'framer-motion'
 import { CheckCircle, Circle, Play, FileText, Code, FolderOpen, Clock, Zap, ExternalLink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getModuleUrl } from '../../services/learningService'
+import { openAndTrace } from '../../services/traceService'
+import { useApp } from '../../context/AppContext'
 import type { Module } from '../../types'
 
 interface ModuleCardProps {
@@ -20,12 +22,20 @@ const typeConfig = {
 
 export function ModuleCard({ module, index, onToggle, onClick }: ModuleCardProps) {
   const navigate = useNavigate()
+  const { state } = useApp()
   const config = typeConfig[module.type]
   const Icon = config.icon
   const moduleUrl = getModuleUrl(module)
 
   const handleStart = () => {
-    window.open(moduleUrl, '_blank', 'noopener,noreferrer')
+    if (!state.user) return
+    openAndTrace(moduleUrl, {
+      etudiant_id: state.user.id,
+      module_nom: module.titre,
+      titre: module.titre,
+      type_ressource: module.type === 'projet' ? 'web' : module.type,
+      source: 'externe',
+    })
   }
 
   const handleQuiz = () => {

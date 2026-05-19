@@ -71,7 +71,7 @@ def cached_search(query: str, n_results: int = 3) -> list[Any]:
     with _lock:
         entry = _cache.get(key)
         if entry and entry["expires_at"] > time.time():
-            return entry["result"]          # ✅ Cache HIT — retour immédiat
+            return entry["result"]          #  Cache HIT — retour immédiat
 
     # — Cache miss → appel ChromaDB
     result = _search_resources(query, n_results=n_results)

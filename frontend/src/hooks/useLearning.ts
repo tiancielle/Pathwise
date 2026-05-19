@@ -48,7 +48,7 @@ export function useLearning() {
     await generatePath()
   }, [generatePath])
 
-  // ✅ signature corrigée : 4 arguments
+  //  signature corrigée : 4 arguments
   const toggleModule = useCallback(async (
     module: Module,
     pathId?: number

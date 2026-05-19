@@ -1,12 +1,5 @@
 import api from './api'
-
-export interface QuizQuestion {
-  id: string
-  question: string
-  options: string[]
-  correctAnswer: number
-  explanation: string
-}
+import type { QuizQuestion, QuizResult } from '../types'
 
 export interface AnswerInput {
   questionId: string
@@ -14,40 +7,73 @@ export interface AnswerInput {
   timeSpent: number
 }
 
-export interface QuizResult {
-  score: number
-  total: number
-  percentage: number
-  recommendations: string[]
-  levelUp?: boolean
-  newLevel?: string
+//  NOUVELLES INTERFACES POUR LE FEEDBACK
+export interface FeedbackResource {
+  title: string
+  url: string
+  description: string
+  type: 'video' | 'article' | 'documentation' | 'web'
 }
 
-// Helper pour adapter la réponse API vers le format QuizQuestion[]
-function _adaptQuestions(data: any): QuizQuestion[] {
-  if (Array.isArray(data)) return data
-  
-  if (data?.questions && Array.isArray(data.questions)) return data.questions
-  
-  if (data?.id && data?.question) return [data]
-  
-  return []
+export interface QuestionFeedback {
+  id: string
+  question: string
+  correctAnswer: number
+  selected: number
+  options?: string[]
+  explanation: string
+  isCorrect?: boolean           // format local
+  status?: '✅ Correct' | '❌ Incorrect'  // format backend
+  selected_text?: string        // texte de la réponse choisie
+  correct_text?: string         // texte de la bonne réponse
 }
 
-// Helper pour générer les recommandations selon le score
-function _buildRecommendations(percentage: number): string[] {
-  if (percentage >= 75) {
-    return ['Excellent ! Cap sur les sujets avances.']
-  } else if (percentage >= 45) {
-    return ['Bon niveau ! Consolidez vos bases.']
-  } else {
-    return ['Continuez sur les fondamentaux.']
+export interface QuizFeedback {
+  historique: QuestionFeedback[]
+  ressources_par_question: Record<string, FeedbackResource[]>
+}
+
+// NOUVELLE ROUTE — POST /api/quiz/feedback
+export async function getQuizFeedback(payload: {
+  etudiant_id: number
+  module_nom: string
+  questions: QuizQuestion[]
+  answers: AnswerInput[]
+}): Promise<QuizFeedback> {
+  const { etudiant_id, module_nom, questions, answers } = payload
+
+  const questionsPayload = questions.map(q => {
+    const answer = answers.find(a => a.questionId === q.id)
+    return {
+      id: q.id,
+      question: q.question,
+      correctAnswer: q.correctAnswer,
+      selected: answer?.selectedOption ?? -1,
+      options: q.options,
+      explanation: q.explanation,
+    }
+  })
+
+  try {
+    const { data } = await api.post('/quiz/feedback', {
+      etudiant_id,
+      module_nom,
+      questions: questionsPayload,
+    })
+    return data
+  } catch {
+    // Fallback local si route pas dispo
+    const historique: QuestionFeedback[] = questionsPayload.map(q => ({
+      ...q,
+      isCorrect: q.selected === q.correctAnswer,
+    }))
+    return { historique, ressources_par_question: {} }
   }
 }
 
 export async function fetchQuestions(
-  subject: string, 
-  level: string, 
+  subject: string,
+  level: string,
   profileId?: number
 ): Promise<QuizQuestion[]> {
   try {
@@ -57,8 +83,7 @@ export async function fetchQuestions(
       profile_id: profileId || 0,
     })
     return _adaptQuestions(data.questions || data)
-  } catch (error) {
-    console.warn('Fetch questions failed, using fallback:', error)
+  } catch {
     return getFallbackQuestions(level)
   }
 }
@@ -109,6 +134,30 @@ export async function submitQuiz(payload: {
 export async function getQuizHistory(id: number) {
   const { data } = await api.get(`/quiz/history/${id}`)
   return data
+}
+
+function _adaptQuestions(raw: Array<{
+  id?: string
+  question?: string
+  text?: string
+  options: string[]
+  correctAnswer?: number
+  correctIndex?: number
+  explanation?: string
+}>): QuizQuestion[] {
+  return raw.map((q, i) => ({
+    id: q.id || String(i),
+    question: q.question || q.text || '',
+    options: q.options,
+    correctAnswer: q.correctAnswer ?? q.correctIndex ?? 0,
+    explanation: q.explanation || '',
+  }))
+}
+
+function _buildRecommendations(percentage: number): string[] {
+  if (percentage >= 75) return ['🎉 Excellent ! Cap sur les sujets avancés.']
+  if (percentage >= 45) return ['💪 Bon niveau ! Consolidez vos bases.']
+  return ['📚 Continuez sur les fondamentaux.']
 }
 
 function getFallbackQuestions(level: string): QuizQuestion[] {

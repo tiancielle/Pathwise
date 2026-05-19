@@ -25,6 +25,7 @@ from rag_pipeline import search_resources, index_all_pdfs
 # load_dotenv()
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+from mcp_client import mcp_get_context
 
 # ─────────────────────────────────────────────
 # CONFIG
@@ -493,6 +494,117 @@ def get_quiz_history(etudiant_id: int, current=Depends(get_current_user)):
     ).fetchall()
     return [dict(r) for r in rows]
 
+class QuizFeedbackRequest(BaseModel):
+    etudiant_id: int
+    module_nom: str
+    questions: List[dict]  # [{id, question, correctAnswer, selected, options}]
+
+class QuizFeedbackResponse(BaseModel):
+    historique: List[dict]  # [{id, question, correct, selected_text, correct_text, status}]
+    ressources_par_question: dict  # {question_id: [ExternalResource]}
+
+@app.post("/api/quiz/feedback", response_model=QuizFeedbackResponse, tags=["Quiz"],
+          summary="Retourne historique vrai/faux + ressources Tavily sur questions ratées")
+async def get_quiz_feedback(body: QuizFeedbackRequest, current=Depends(get_current_user)):
+    """
+    Reçoit les questions + réponses de l'étudiant.
+    Retourne :
+    - historique : chaque question avec statut ✅/❌
+    - ressources_par_question : pour chaque question ratée, 2 ressources Tavily
+    """
+    historique = []
+    questions_fausses = []
+
+    for q in body.questions:
+        correct = q.get("correctAnswer", -1)
+        selected = q.get("selected", -1)
+        options = q.get("options", [])
+        is_correct = correct == selected
+
+        historique.append({
+            "id":            q.get("id"),
+            "question":      q.get("question", ""),
+            "status":        "✅ Correct" if is_correct else "❌ Incorrect",
+            "selected_text": options[selected] if 0 <= selected < len(options) else "—",
+            "correct_text":  options[correct]  if 0 <= correct  < len(options) else "—",
+            "explanation":   q.get("explanation", ""),
+        })
+
+        if not is_correct:
+            questions_fausses.append(q)
+
+    # Tavily sur chaque question fausse
+    ressources_par_question = {}
+    for q in questions_fausses:
+        query = f"{body.module_nom} {q.get('question', '')[:80]}"
+        tavily_results = await search_tavily(query, n=2)
+        ressources_par_question[str(q.get("id"))] = [r.dict() for r in tavily_results]
+
+    return QuizFeedbackResponse(
+        historique=historique,
+        ressources_par_question=ressources_par_question,
+    )
+
+
+# ─────────────────────────────────────────────
+# TRAÇABILITÉ — /api/trace
+# ─────────────────────────────────────────────
+class TraceRequest(BaseModel):
+    etudiant_id: int
+    module_nom: str
+    titre: str
+    url: str
+    type_ressource: str   # video | article | exercice | documentation | web
+    source: Optional[str] = "externe"
+
+@app.post("/api/trace", status_code=201, tags=["Traçabilité"],
+          summary="Enregistre une ressource consultée par l'étudiant")
+def trace_ressource(body: TraceRequest, current=Depends(get_current_user)):
+    """
+    Appelé chaque fois qu'un étudiant clique sur une ressource
+    (bouton Commencer, lien chat, ressource quiz...).
+    Permet à l'enseignante de voir exactement ce que l'étudiant a consulté.
+    """
+    require_same_user(body.etudiant_id, current)
+    db = get_db()
+    db.execute(
+        """INSERT INTO ressources_consultees
+           (etudiant_id, module_nom, titre, url, type_ressource, source, date_consultation)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (body.etudiant_id, body.module_nom, body.titre,
+         body.url, body.type_ressource, body.source,
+         datetime.utcnow().isoformat())
+    )
+    db.commit()
+    return {"message": "Ressource enregistrée"}
+
+@app.get("/api/trace/{etudiant_id}", tags=["Traçabilité"],
+         summary="Historique des ressources consultées par l'étudiant")
+def get_trace(etudiant_id: int, current=Depends(get_current_user)):
+    require_same_user(etudiant_id, current)
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, module_nom, titre, url, type_ressource, source, date_consultation
+           FROM ressources_consultees WHERE etudiant_id = ?
+           ORDER BY date_consultation DESC""",
+        (etudiant_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+@app.get("/api/trace/admin/all", tags=["Traçabilité"],
+         summary="(Enseignante) Voir toutes les ressources consultées par tous les étudiants")
+def get_trace_all(current=Depends(get_current_user)):
+    """Route pour Mme Chaabi — voir la traçabilité complète."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT r.id, e.nom as etudiant_nom, r.module_nom, r.titre,
+                  r.url, r.type_ressource, r.source, r.date_consultation
+           FROM ressources_consultees r
+           JOIN etudiants e ON e.id = r.etudiant_id
+           ORDER BY r.date_consultation DESC""",
+    ).fetchall()
+    return [dict(r) for r in rows]
+
 
 @app.post("/api/quiz/questions", response_model=QuizQuestionsResponse, tags=["Quiz"],
           summary="Génère 5 QCM variés via GPT-4o-mini selon le sujet et le niveau")
@@ -704,6 +816,9 @@ async def search_tavily(query: str, n: int = 4) -> list[ExternalResource]:
 
 @app.post("/api/chat", response_model=ChatResponse, tags=["Chat IA"],
           summary="Agent conversationnel — ChromaDB (explication) + Tavily (ressources externes)")
+
+@app.post("/api/chat", response_model=ChatResponse, tags=["Chat IA"],
+          summary="Agent conversationnel — ChromaDB (explication) + Tavily (ressources externes)")
 async def chat_with_agent(body: ChatRequest, current=Depends(get_current_user)):
     """
     Agent IA conversationnel.
@@ -737,7 +852,6 @@ async def chat_with_agent(body: ChatRequest, current=Depends(get_current_user)):
     pdf_sources:    list[str] = []
 
     for i, res in enumerate(rag_results, 1):
-        # search_resources() retourne "contenu" et "source" directement
         content = res.get("contenu", res.get("content", res.get("document", "")))
         source  = res.get("source", res.get("metadata", {}).get("source", f"Document {i}"))
         if content and source != "système":
@@ -748,6 +862,9 @@ async def chat_with_agent(body: ChatRequest, current=Depends(get_current_user)):
 
     # — 3. Tavily : ressources externes en parallèle
     external_resources = await search_tavily(body.message, n=4)
+
+    # — MCP Filesystem : liste les fichiers disponibles
+    mcp_context = await mcp_get_context(body.message)
 
     # — 4. Prompt GPT — axé explication, pas recommandation de ressources
     has_context = bool(context_text)
@@ -765,6 +882,10 @@ Utilise-les PRIORITAIREMENT pour expliquer, en citant le document si pertinent.
 --- EXTRAITS DES DOCUMENTS ---
 {context_text}
 --- FIN DES EXTRAITS ---''' if has_context else "Utilise tes connaissances générales pour expliquer."}
+{f"""
+--- FICHIERS MCP DISPONIBLES ---
+{mcp_context}
+--- FIN MCP ---""" if mcp_context else ""}
 
 NE PAS mentionner de liens ou ressources externes dans ta réponse — elles sont affichées séparément."""
 
@@ -781,6 +902,7 @@ NE PAS mentionner de liens ou ressources externes dans ta réponse — elles son
         sources=pdf_sources,
         external_resources=external_resources,
     )
+
 
 # ─────────────────────────────────────────────
 # STATS & DASHBOARD — /api/dashboard
