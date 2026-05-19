@@ -9,18 +9,30 @@ export interface TracePayload {
   source: 'externe'
 }
 
-// Fire-and-forget — n'attend pas la réponse
-export function traceResource(payload: TracePayload): void {
-  api.post('/trace', payload).catch(() => {
-    // Silencieux — ne bloque jamais l'UX
-  })
+export interface TraceResponse {
+  id: number
+  message: string
 }
 
-// Helper : ouvre le lien ET trace en même temps
-export function openAndTrace(
+export function traceResource(payload: TracePayload): Promise<TraceResponse> {
+  return api.post('/trace', payload)
+    .then(r => r.data)
+    .catch(() => ({ id: 0, message: 'trace failed' }))
+}
+
+export async function confirmTrace(traceId: number, dureeSecondes: number): Promise<void> {
+  await api.patch(`/trace/${traceId}/confirm`, {
+    consulte: true,
+    duree_secondes: dureeSecondes,
+  }).catch(() => {})
+}
+
+// Ouvre + trace + retourne l'id pour le confirm
+export async function openAndTrace(
   url: string,
   payload: Omit<TracePayload, 'url'>
-): void {
-  traceResource({ ...payload, url })
+): Promise<number> {
+  const result = await traceResource({ ...payload, url })
   window.open(url, '_blank', 'noopener,noreferrer')
+  return result.id
 }
