@@ -23,16 +23,16 @@ dependencies = [
     "python-jose==3.5.0",
     "cryptography==46.0.5",
 
-    # ── Data ─────────────────────────────────────────
+    # ── Data & Config ────────────────────────────────
     "pydantic==2.12.5",
     "pydantic-settings==2.14.0",
     "python-dotenv==1.2.2",
 
-    # ── RAG / Vector DB ──────────────────────────────
+    # ── RAG / Vector DB / NLP ────────────────────────
     "chromadb==1.5.8",
     "sentence-transformers==5.4.1",
     "numpy==2.3.4",
-    "pymupdf==1.27.2.3",
+    "PyMuPDF==1.27.2.3",
     "pdfplumber==0.11.9",
     "pdfminer.six==20251230",
     "pypdfium2==5.8.0",
@@ -40,14 +40,15 @@ dependencies = [
     "transformers==5.5.4",
     "torch==2.11.0",
 
-    # ── Search ───────────────────────────────────────
+    # ── Search & Web ─────────────────────────────────
     "tavily-python==0.7.24",
+    "requests==2.32.5",
 
-    # ── ML / NLP (optionnel) ─────────────────────────
+    # ── ML / Data Science ────────────────────────────
     "scikit-learn==1.7.2",
     "pandas==2.3.3",
 
-    # ── Utils ────────────────────────────────────────
+    # ── Utils & Server Extras ────────────────────────
     "tqdm==4.67.3",
     "rich==14.3.3",
     "httptools==0.7.1",
