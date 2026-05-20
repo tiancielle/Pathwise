@@ -103,6 +103,14 @@ class ProfilUpdate(BaseModel):
     objectifs: Optional[str] = None
 
 # ── Nouveaux schémas ─────────────────────────
+class QuizFeedbackRequest(BaseModel):
+    etudiant_id: int
+    module_nom: str
+    questions: List[dict]
+
+class QuizFeedbackResponse(BaseModel):
+    historique: List[dict]
+    ressources_par_question: dict
 class ChatRequest(BaseModel):
     message: str
     etudiant_id: int
@@ -722,6 +730,7 @@ async def get_ressources(query: str = "machine learning", n: int = 5):
                     "niveau": "débutant", # ← ajouter
                     "n": n
                 })
+                return r.json()
         except Exception:
             results = search_resources(query, n_results=n)
             return {"query": query, "results": results}
@@ -814,8 +823,8 @@ async def search_tavily(query: str, n: int = 4) -> list[ExternalResource]:
     return resources
 
 
-@app.post("/api/chat", response_model=ChatResponse, tags=["Chat IA"],
-          summary="Agent conversationnel — ChromaDB (explication) + Tavily (ressources externes)")
+# @app.post("/api/chat", response_model=ChatResponse, tags=["Chat IA"],
+#           summary="Agent conversationnel — ChromaDB (explication) + Tavily (ressources externes)")
 
 @app.post("/api/chat", response_model=ChatResponse, tags=["Chat IA"],
           summary="Agent conversationnel — ChromaDB (explication) + Tavily (ressources externes)")
@@ -1301,6 +1310,20 @@ class AdaptRequest(BaseModel):
     score: float        # 0.0 – 1.0
     path_id: int
 
+# class AdaptRequest(BaseModel):
+#     etudiant_id: int
+#     module_nom: str
+#     score: float
+#     path_id: int
+
+class TraceRequest(BaseModel):
+    etudiant_id: int
+    module_nom: str
+    titre: str
+    url: str
+    type_ressource: str
+    source: Optional[str] = "externe"
+
 @app.post("/api/learning-path/adapt", tags=["Learning Path"],
           summary="Adapte le parcours selon le score du quiz")
 async def adapt_learning_path(body: AdaptRequest, current=Depends(get_current_user)):
@@ -1368,6 +1391,44 @@ def get_quiz_score_internal(etudiant_id: int):
     ).fetchone()
     score = round((row["score_moyen"] or 0) * 100, 1)
     return {"etudiant_id": etudiant_id, "score": score, "nb_quiz": row["nb_quiz"]}
+
+
+@app.get("/api/documents/{etudiant_id}", tags=["Upload"],
+         summary="Liste les documents uploadés disponibles pour le RAG")
+def get_documents(etudiant_id: int, current=Depends(get_current_user)):
+    require_same_user(etudiant_id, current)
+    resources_dir = Path(__file__).parent.parent / "data" / "resources_raw"
+    files = []
+    for f in resources_dir.glob("*"):
+        if f.suffix.lower() in {".pdf", ".docx", ".txt"}:
+            files.append({
+                "filename": f.name,
+                "size_mb": round(f.stat().st_size / (1024 * 1024), 2),
+                "date_upload": datetime.fromtimestamp(
+                    f.stat().st_mtime
+                ).isoformat(),
+            })
+    files.sort(key=lambda x: x["date_upload"], reverse=True)
+    return {"documents": files, "total": len(files)}
+
+@app.patch("/api/trace/{trace_id}/confirm", tags=["Traçabilité"],
+           summary="Confirme qu'une ressource a été consultée")
+def confirm_trace(trace_id: int, current=Depends(get_current_user)):
+    db = get_db()
+    row = db.execute(
+        "SELECT etudiant_id FROM ressources_consultees WHERE id = ?",
+        (trace_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Trace introuvable")
+    require_same_user(row["etudiant_id"], current)
+    db.execute(
+        "UPDATE ressources_consultees SET source = 'confirmee' WHERE id = ?",
+        (trace_id,)
+    )
+    db.commit()
+    return {"message": "Consultation confirmée "}
+
 
 # ─────────────────────────────────────────────
 # HEALTH CHECK

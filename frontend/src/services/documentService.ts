@@ -52,7 +52,11 @@ export async function uploadDocument(file: File): Promise<UploadResult> {
 export async function getDocuments(etudiantId: number): Promise<Document[]> {
   try {
     const { data } = await api.get(`/documents/${etudiantId}`)
-    return data
+    // Gère tous les formats possibles du backend
+    if (Array.isArray(data)) return data
+    if (Array.isArray(data?.documents)) return data.documents
+    if (Array.isArray(data?.data)) return data.data
+    return []
   } catch {
     return []
   }

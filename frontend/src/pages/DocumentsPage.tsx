@@ -123,9 +123,10 @@ export function DocumentsPage() {
           ) : (
             <div className="space-y-3">
               <AnimatePresence>
-                {documents.map((doc, i) => (
+                {(Array.isArray(documents) ? documents : []).map((doc, i) => (
                   <motion.div
-                    key={doc.id}
+                    // key={doc.id}
+                    key={`${doc.id}-${i}`}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 10 }}
