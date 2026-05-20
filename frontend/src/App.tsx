@@ -8,6 +8,7 @@ import { LearningPage } from './pages/LearningPage'
 import { QuizPage } from './pages/QuizPage'
 import { ChatPage } from './pages/ChatPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { DocumentsPage } from './pages/DocumentsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { state } = useApp()
@@ -32,8 +33,10 @@ function AppRoutes() {
         <Route path="/quiz/module/:moduleId" element={<PrivateRoute><QuizPage /></PrivateRoute>} />
         <Route path="/chat"      element={<PrivateRoute><ChatPage /></PrivateRoute>} />
         <Route path="/profile"   element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
+        <Route path="/documents" element={<PrivateRoute><DocumentsPage /></PrivateRoute>} />
         {/* Redirige /progress vers /learning */}
         <Route path="/progress"  element={<Navigate to="/learning" replace />} />
+
         <Route path="*"          element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>

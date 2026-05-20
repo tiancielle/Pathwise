@@ -1,13 +1,15 @@
 import { motion } from 'framer-motion'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { BookOpen, LayoutDashboard, Zap, MessageSquare, LogOut, User } from 'lucide-react'
+import { BookOpen, LayoutDashboard, Zap, MessageSquare, LogOut, User, FolderOpen } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
+
 
 const navItems = [
   { path: '/dashboard', label: 'Accueil',   icon: LayoutDashboard },
   { path: '/learning',  label: 'Parcours',  icon: BookOpen },
   { path: '/quiz',      label: 'Quiz',      icon: Zap },
   { path: '/chat',      label: 'Agent IA',  icon: MessageSquare },
+  { path: '/documents', label: 'Documents',  icon: FolderOpen },
 ]
 
 export function Navbar() {
