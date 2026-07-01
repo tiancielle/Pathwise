@@ -1249,7 +1249,7 @@ Crée 5-6 modules progressifs qui couvrent : introduction → concepts clés →
         "id":      cur.lastrowid,
         "titre":   titre,
         "contenu": contenu,
-        "message": f"✅ Parcours '{body.subject}' généré avec {len(contenu.get('modules', []))} modules",
+        "message": f" Parcours '{body.subject}' généré avec {len(contenu.get('modules', []))} modules",
     }
 
 
